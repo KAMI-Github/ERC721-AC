@@ -11,11 +11,10 @@ contract DeployGameNFT is Script {
 
         // Deploy the GameNFT contract
         GameNFT gameNFT = new GameNFT(
-            msg.sender,                // royalty receiver
-            500,                       // 5% royalty fee (500 / 10000)
-            "Game NFT Collection",     // name
-            "GNFT",                    // symbol
-            "https://example.com/api/" // base URI
+            0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174, // USDC address on Polygon
+            "Game NFT Collection",                       // name
+            "GNFT",                                      // symbol
+            "https://example.com/api/"                   // base URI
         );
 
         // Stop broadcasting transactions
