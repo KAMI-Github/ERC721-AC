@@ -9,7 +9,11 @@ import "@limitbreak/creator-token-standards/src/erc721c/ERC721C.sol";
 import "@limitbreak/creator-token-standards/src/programmable-royalties/BasicRoyalties.sol";
 import "@limitbreak/creator-token-standards/src/interfaces/ITransferValidator.sol";
 
-contract GameNFT is OwnableBasic, ERC721C, ERC2981 {
+/**
+ * @title KAMI721C
+ * @dev An ERC721C implementation with USDC payments and programmable royalties for both minting and transfers
+ */
+contract KAMI721C is OwnableBasic, ERC721C, ERC2981 {
     using SafeERC20 for IERC20;
     
     uint256 private _nextTokenId;

@@ -1,22 +1,54 @@
 {
-  "name": "@paulstinchcombe/sc721",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "Paul Stinchcombe",
-  "license": "ISC",
-  "description": "",
-  "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "@openzeppelin/contracts": "^4.8.3",
-    "@types/dotenv": "^6.1.1",
-    "dotenv": "^16.4.7",
-    "hardhat": "^2.22.19"
-  },
-  "dependencies": {
-    "@limitbreak/creator-token-standards": "^4.0.1"
-  }
+	"name": "gamenft-contracts",
+	"version": "1.0.0",
+	"description": "GameNFT smart contracts with USDC payments and multiple royalty receivers",
+	"scripts": {
+		"clean": "hardhat clean && forge clean",
+		"compile": "hardhat compile && forge build",
+		"compile:hardhat": "hardhat compile",
+		"compile:forge": "forge build",
+		"test": "npm run test:hardhat && npm run test:forge",
+		"test:hardhat": "hardhat test",
+		"test:forge": "forge test",
+		"test:kami:hardhat": "hardhat test test/KAMI721C.test.ts",
+		"test:kami:forge": "forge test --match-path test/KAMI721C.t.sol -vv",
+		"coverage": "hardhat coverage",
+		"lint": "solhint 'contracts/**/*.sol'",
+		"format": "forge fmt",
+		"deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+		"deploy:goerli": "hardhat run scripts/deploy.ts --network goerli",
+		"deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+		"deploy:mumbai": "hardhat run scripts/deploy.ts --network mumbai",
+		"deploy:polygon": "hardhat run scripts/deploy.ts --network polygon",
+		"deploy:mainnet": "hardhat run scripts/deploy.ts --network mainnet",
+		"deploy:forge:local": "forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url http://localhost:8545 --broadcast",
+		"deploy:forge:goerli": "forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url $GOERLI_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify",
+		"deploy:forge:sepolia": "forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify",
+		"deploy:forge:polygon": "forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url $POLYGON_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify",
+		"deploy:forge:mainnet": "forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url $MAINNET_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify",
+		"node": "hardhat node",
+		"anvil": "anvil"
+	},
+	"devDependencies": {
+		"@nomicfoundation/hardhat-toolbox": "^3.0.0",
+		"@nomicfoundation/hardhat-verify": "^2.0.0",
+		"@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
+		"@nomicfoundation/hardhat-ethers": "^3.0.0",
+		"@nomicfoundation/hardhat-network-helpers": "^1.0.0",
+		"@nomiclabs/hardhat-solhint": "^3.0.0",
+		"@typechain/ethers-v6": "^0.5.0",
+		"@typechain/hardhat": "^9.0.0",
+		"chai": "^4.3.7",
+		"ethers": "^6.7.1",
+		"hardhat": "^2.19.1",
+		"hardhat-gas-reporter": "^1.0.9",
+		"solhint": "^4.0.0",
+		"solidity-coverage": "^0.8.5",
+		"typechain": "^8.3.1"
+	},
+	"dependencies": {
+		"@limitbreak/creator-token-standards": "^1.1.2",
+		"@openzeppelin/contracts": "^5.0.0",
+		"dotenv": "^16.3.1"
+	}
 }

@@ -65,7 +65,7 @@ $ anvil --help
 $ cast --help
 ```
 
-# 🎮 GameNFT Smart Contract Documentation
+# 🎮 KAMI721-C Smart Contract Documentation
 
 <div align="center">
   <img src="https://img.shields.io/badge/Solidity-^0.8.24-red.svg" alt="Solidity Version">
@@ -75,7 +75,7 @@ $ cast --help
 
 ## 📑 Overview
 
-The `GameNFT` contract is a modern implementation of an NFT collection that leverages USDC for payments and includes advanced royalty distribution capabilities. Built on ERC721C with support for multiple royalty receivers for both minting and transfers, it provides a flexible solution for game asset tokenization.
+The `KAMI721C` contract is a modern implementation of an NFT collection that leverages USDC for payments and includes advanced royalty distribution capabilities. Built on ERC721C with support for multiple royalty receivers for both minting and transfers, it provides a flexible solution for game asset tokenization.
 
 ## 🔧 Features
 
@@ -111,14 +111,14 @@ npm install
 
 ### 3. Configure the deployment
 
-Edit the deployment script in `script/DeployGameNFT.s.sol` to use the correct USDC address for your target network:
+Edit the deployment script in `script/DeployKAMI721C.s.sol` to use the correct USDC address for your target network:
 
 ```solidity
 // Example for Polygon
-GameNFT gameNFT = new GameNFT(
+KAMI721C kami721c = new KAMI721C(
     0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174, // USDC address on Polygon
-    "Your Game NFT Collection",                  // name
-    "GNFT",                                      // symbol
+    "KAMI NFT Collection",                       // name
+    "KAMI",                                      // symbol
     "https://your-metadata-api.com/tokens/"      // base URI
 );
 ```
@@ -126,7 +126,7 @@ GameNFT gameNFT = new GameNFT(
 ### 4. Deploy to your chosen network
 
 ```shell
-forge script script/DeployGameNFT.s.sol:DeployGameNFT --rpc-url <your_rpc_url> --private-key <your_private_key> --broadcast
+forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url <your_rpc_url> --private-key <your_private_key> --broadcast
 ```
 
 ## 📝 External Methods Guide
