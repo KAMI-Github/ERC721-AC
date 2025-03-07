@@ -120,8 +120,8 @@ contract KAMI721CTest is Test {
     }
     
     function testSafeTransferFromWithRoyalties() public {
-        // Skip this test due to ERC721C transfer validation issues
-        vm.skip(true);
+        // Removed Skip: ERC721C transfer validation issues appear to be fixed
+        // vm.skip(true);
         
         // Create royalty structure
         KAMI721C.RoyaltyData[] memory royalties = new KAMI721C.RoyaltyData[](2);

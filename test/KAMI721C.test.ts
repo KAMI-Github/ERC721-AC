@@ -260,7 +260,7 @@ describe('KAMI721C with USDC Payments', function () {
 		});
 
 		// Skip this test since it fails due to ERC721C transfer validation issues
-		it.skip('Should transfer with royalty payments in one step', async function () {
+		it('Should transfer with royalty payments in one step', async function () {
 			// Set up transfer royalties
 			const transferRoyalties = [
 				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
