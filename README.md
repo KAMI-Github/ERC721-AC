@@ -24,7 +24,6 @@ The `KAMI721C` contract is a modern implementation of an NFT collection that lev
 
 ## 📋 Prerequisites
 
--   [Foundry](https://book.getfoundry.sh/getting-started/installation) installed
 -   [Node.js](https://nodejs.org/) and npm/yarn installed
 -   Access to an RPC provider for deployment (Infura, Alchemy, etc.)
 -   USDC contract address on your target network
@@ -41,28 +40,49 @@ cd <repository-directory>
 ### 2. Install dependencies
 
 ```shell
-forge install
 npm install
 ```
 
 ### 3. Configure the deployment
 
-Edit the deployment script in `script/DeployKAMI721C.s.sol` to use the correct USDC address for your target network:
+Create or modify the `.env` file with the necessary configuration:
 
-```solidity
-// Example for Polygon
-KAMI721C kami721c = new KAMI721C(
-    0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174, // USDC address on Polygon
-    "KAMI NFT Collection",                       // name
-    "KAMI",                                      // symbol
-    "https://your-metadata-api.com/tokens/"      // base URI
-);
+```
+# Network RPC URLs
+MAINNET_RPC_URL=https://eth-mainnet.alchemyapi.io/v2/your-api-key
+GOERLI_RPC_URL=https://eth-goerli.alchemyapi.io/v2/your-api-key
+SEPOLIA_RPC_URL=https://eth-sepolia.alchemyapi.io/v2/your-api-key
+POLYGON_RPC_URL=https://polygon-mainnet.alchemyapi.io/v2/your-api-key
+MUMBAI_RPC_URL=https://polygon-mumbai.alchemyapi.io/v2/your-api-key
+
+# Private key for deployment
+PRIVATE_KEY=your-private-key
+
+# Contract configuration
+NFT_NAME="KAMI NFT Collection"
+NFT_SYMBOL="KAMI"
+BASE_URI="https://your-metadata-api.com/tokens/"
+SECURITY_LEVEL=1
+
+# API keys for verification
+ETHERSCAN_API_KEY=your-etherscan-api-key
+POLYGONSCAN_API_KEY=your-polygonscan-api-key
 ```
 
 ### 4. Deploy to your chosen network
 
 ```shell
-forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url <your_rpc_url> --private-key <your_private_key> --broadcast
+# Local development
+npm run deploy:local
+
+# Test networks
+npm run deploy:goerli
+npm run deploy:sepolia
+npm run deploy:mumbai
+
+# Production networks
+npm run deploy:polygon
+npm run deploy:mainnet
 ```
 
 ## 🔐 Role-Based Access Control
@@ -81,41 +101,30 @@ The contract implements OpenZeppelin's AccessControl pattern with the following 
 
 Grants a role to an account. Can only be called by accounts with the DEFAULT_ADMIN_ROLE.
 
-```shell
-# Example to grant RENTER_ROLE to an address
-cast send --rpc-url <rpc_url> \
-  --private-key <admin_private_key> \
-  <contract_address> \
-  "grantRole(bytes32,address)" \
-  $(cast keccak "RENTER_ROLE") \
-  <account_address>
+```javascript
+// Example to grant RENTER_ROLE to an address using ethers.js
+const roleHash = ethers.keccak256(ethers.toUtf8Bytes('RENTER_ROLE'));
+await nftContract.grantRole(roleHash, accountAddress);
 ```
 
 #### `revokeRole(bytes32 role, address account)`
 
 Revokes a role from an account. Can only be called by accounts with the DEFAULT_ADMIN_ROLE.
 
-```shell
-# Example to revoke RENTER_ROLE from an address
-cast send --rpc-url <rpc_url> \
-  --private-key <admin_private_key> \
-  <contract_address> \
-  "revokeRole(bytes32,address)" \
-  $(cast keccak "RENTER_ROLE") \
-  <account_address>
+```javascript
+// Example to revoke RENTER_ROLE from an address using ethers.js
+const roleHash = ethers.keccak256(ethers.toUtf8Bytes('RENTER_ROLE'));
+await nftContract.revokeRole(roleHash, accountAddress);
 ```
 
 #### `hasRole(bytes32 role, address account)`
 
 Checks if an account has a specific role.
 
-```shell
-# Example to check if an address has OWNER_ROLE
-cast call --rpc-url <rpc_url> \
-  <contract_address> \
-  "hasRole(bytes32,address)" \
-  $(cast keccak "OWNER_ROLE") \
-  <account_address>
+```javascript
+// Example to check if an address has OWNER_ROLE using ethers.js
+const roleHash = ethers.keccak256(ethers.toUtf8Bytes('OWNER_ROLE'));
+const hasRole = await nftContract.hasRole(roleHash, accountAddress);
 ```
 
 ## 📝 External Methods Guide
@@ -126,12 +135,11 @@ cast call --rpc-url <rpc_url> \
 
 Allows users to mint a new NFT by paying the fixed USDC mint price.
 
-```shell
-# Using Cast
-cast send --rpc-url <rpc_url> \
-  --private-key <your_private_key> \
-  <contract_address> \
-  "mint()"
+```javascript
+// First approve USDC spending
+await usdcContract.approve(nftContractAddress, mintPrice);
+// Then mint the NFT
+await nftContract.mint();
 ```
 
 **Note**: Users must first approve the contract to spend their USDC.
@@ -140,12 +148,8 @@ cast send --rpc-url <rpc_url> \
 
 Allows the token owner to burn their NFT.
 
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <your_private_key> \
-  <contract_address> \
-  "burn(uint256)" \
-  <token_id>
+```javascript
+await nftContract.burn(tokenId);
 ```
 
 ### Royalty Management
@@ -154,154 +158,97 @@ cast send --rpc-url <rpc_url> \
 
 Sets global royalties distributed during minting. Only callable by users with OWNER_ROLE.
 
-```shell
-# Example to set 5% royalty to address1 and 3% to address2
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setMintRoyalties(((address,uint96)[]))" \
-  "[(<address1>,500),(<address2>,300)]"
+```javascript
+// Example to set 5% royalty to address1 and 3% to address2
+const royalties = [
+	{ receiver: address1, feeNumerator: 500 }, // 5%
+	{ receiver: address2, feeNumerator: 300 }, // 3%
+];
+await nftContract.setMintRoyalties(royalties);
 ```
 
 #### `setTransferRoyalties(RoyaltyData[] calldata royalties)`
 
 Sets global royalties for token transfers. Only callable by users with OWNER_ROLE.
 
-```shell
-# Example to set 7% royalty to address1
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setTransferRoyalties(((address,uint96)[]))" \
-  "[(<address1>,700)]"
+```javascript
+// Example to set transfer royalties that total to 100%
+const royalties = [
+	{ receiver: address1, feeNumerator: 7000 }, // 70%
+	{ receiver: address2, feeNumerator: 3000 }, // 30%
+];
+await nftContract.setTransferRoyalties(royalties);
 ```
 
 #### `setTokenMintRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`
 
 Sets token-specific mint royalties. Only callable by users with OWNER_ROLE.
 
-```shell
-# Example for token ID 0
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setTokenMintRoyalties(uint256,(address,uint96)[])" \
-  0 \
-  "[(<address1>,400),(<address2>,200)]"
+```javascript
+// Example for token ID 0
+const royalties = [
+	{ receiver: address1, feeNumerator: 400 }, // 4%
+	{ receiver: address2, feeNumerator: 200 }, // 2%
+];
+await nftContract.setTokenMintRoyalties(0, royalties);
 ```
 
 #### `setTokenTransferRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`
 
 Sets token-specific transfer royalties. Only callable by users with OWNER_ROLE.
 
-```shell
-# Example for token ID 0
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setTokenTransferRoyalties(uint256,(address,uint96)[])" \
-  0 \
-  "[(<address1>,400),(<address2>,200)]"
+```javascript
+// Example for token ID 0
+const royalties = [
+	{ receiver: address1, feeNumerator: 4000 }, // 40%
+	{ receiver: address2, feeNumerator: 6000 }, // 60%
+];
+await nftContract.setTokenTransferRoyalties(0, royalties);
 ```
 
 ### Transfer Functions
 
-#### `setTransferPrice(uint256 tokenId, uint256 price)`
+#### `sellToken(address to, uint256 tokenId, uint256 salePrice)`
 
-Sets a transfer price for a token. This price is used for royalty calculations. Only callable by token owner.
+Allows the token owner to sell the token directly through the contract, handling all royalty and fee payments automatically.
 
-```shell
-# Example to set 500 USDC as transfer price
-cast send --rpc-url <rpc_url> \
-  --private-key <your_private_key> \
-  <contract_address> \
-  "setTransferPrice(uint256,uint256)" \
-  <token_id> \
-  500000000  # 500 USDC with 6 decimals
+```javascript
+// First, buyer needs to approve USDC spending
+await usdcContract.connect(buyerSigner).approve(nftContractAddress, salePrice);
+// Then seller initiates the sale
+await nftContract.connect(sellerSigner).sellToken(buyerAddress, tokenId, salePrice);
 ```
-
-#### `payTransferRoyalties(uint256 tokenId)`
-
-Allows anyone to pay the transfer royalties for a token. The transfer price must be set first.
-
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <your_private_key> \
-  <contract_address> \
-  "payTransferRoyalties(uint256)" \
-  <token_id>
-```
-
-**Note**: User must first approve the contract to spend the required USDC.
-
-#### `safeTransferFromWithRoyalties(address from, address to, uint256 tokenId, uint256 salePrice, bytes memory data)`
-
-Transfers a token and handles royalty payments in one transaction.
-
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <your_private_key> \
-  <contract_address> \
-  "safeTransferFromWithRoyalties(address,address,uint256,uint256,bytes)" \
-  <from_address> \
-  <to_address> \
-  <token_id> \
-  500000000  # 500 USDC with 6 decimals
-  0x         # Empty bytes
-```
-
-**Note**: User must first approve the contract to spend the required USDC.
 
 ### Administrative Functions
-
-#### `withdrawUSDC()`
-
-Allows users with OWNER_ROLE to withdraw all USDC held by the contract.
-
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "withdrawUSDC()"
-```
 
 #### `setBaseURI(string memory baseURI)`
 
 Updates the base URI for token metadata. Only callable by users with OWNER_ROLE.
 
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setBaseURI(string)" \
-  "https://new-metadata-api.com/tokens/"
+```javascript
+await nftContract.setBaseURI('https://new-metadata-api.com/tokens/');
 ```
 
 #### `setPlatformCommission(uint96 newPlatformCommissionPercentage, address newPlatformAddress)`
 
 Updates the platform commission percentage and platform address. Only callable by users with OWNER_ROLE.
 
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setPlatformCommission(uint96,address)" \
-  800 \  # 8% commission
-  <new_platform_address>
+```javascript
+// Set 8% commission and update platform address
+await nftContract.setPlatformCommission(800, newPlatformAddress);
 ```
 
 #### `setSecurityPolicy(uint8 securityLevel, uint32 operatorWhitelistId, uint32 permittedContractReceiversAllowlistId)`
 
 Sets the security policy for the ERC721C implementation. Only callable by users with OWNER_ROLE.
 
-```shell
-cast send --rpc-url <rpc_url> \
-  --private-key <owner_private_key> \
-  <contract_address> \
-  "setSecurityPolicy(uint8,uint32,uint32)" \
-  2  # Security level
-  1  # Operator whitelist ID
-  1  # Permitted contract receivers allowlist ID
+```javascript
+// Set security policy
+await nftContract.setSecurityPolicy(
+	2, // Security level
+	1, // Operator whitelist ID
+	1 // Permitted contract receivers allowlist ID
+);
 ```
 
 ### View Functions
@@ -310,58 +257,45 @@ cast send --rpc-url <rpc_url> \
 
 Checks if an account has a specific role.
 
-```shell
-cast call --rpc-url <rpc_url> \
-  <contract_address> \
-  "hasRole(bytes32,address)" \
-  <role_bytes32> \
-  <account_address>
+```javascript
+const roleHash = ethers.keccak256(ethers.toUtf8Bytes('OWNER_ROLE'));
+const hasRole = await nftContract.hasRole(roleHash, accountAddress);
 ```
 
 #### `getMintRoyaltyReceivers(uint256 tokenId)`
 
 Returns all mint royalty receivers for a given token.
 
-```shell
-cast call --rpc-url <rpc_url> \
-  <contract_address> \
-  "getMintRoyaltyReceivers(uint256)" \
-  <token_id>
+```javascript
+const mintRoyaltyReceivers = await nftContract.getMintRoyaltyReceivers(tokenId);
 ```
 
 #### `getTransferRoyaltyReceivers(uint256 tokenId)`
 
 Returns all transfer royalty receivers for a given token.
 
-```shell
-cast call --rpc-url <rpc_url> \
-  <contract_address> \
-  "getTransferRoyaltyReceivers(uint256)" \
-  <token_id>
+```javascript
+const transferRoyaltyReceivers = await nftContract.getTransferRoyaltyReceivers(tokenId);
 ```
 
 #### `royaltyInfo(uint256 tokenId, uint256 salePrice)`
 
 Returns royalty information according to ERC2981.
 
-```shell
-cast call --rpc-url <rpc_url> \
-  <contract_address> \
-  "royaltyInfo(uint256,uint256)" \
-  <token_id> \
-  <sale_price>
+```javascript
+const [receiver, royaltyAmount] = await nftContract.royaltyInfo(tokenId, salePrice);
 ```
 
 ## 🧪 Testing
 
-Run the comprehensive test suite to verify the contract's functionality:
+Run the test suite to verify the contract's functionality:
 
 ```shell
-# Run Foundry tests
-forge test
+# Run all tests
+npm test
 
-# Run TypeScript tests
-npx hardhat test
+# Run specific KAMI721C tests
+npm run test:kami
 ```
 
 ## ⚠️ Important Notes
@@ -376,70 +310,3 @@ npx hardhat test
 ## 📜 License
 
 This project is licensed under the MIT License.
-
-## Foundry
-
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
-
-Foundry consists of:
-
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
-
-## Documentation
-
-https://book.getfoundry.sh/
-
-## Usage
-
-### Build
-
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
