@@ -15,7 +15,7 @@ describe('KAMI721C with USDC Payments', function () {
 	let royaltyReceiver3: SignerWithAddress;
 
 	// USDC has 6 decimals
-	const MINT_PRICE = parseUnits('100', 6); // 100 USDC
+	const MINT_PRICE = parseUnits('1', 6); // 1 USDC
 	const INITIAL_USDC_BALANCE = parseUnits('10000', 6); // 10,000 USDC
 	const TRANSFER_PRICE = parseUnits('500', 6); // 500 USDC
 
@@ -40,7 +40,13 @@ describe('KAMI721C with USDC Payments', function () {
 
 		// Deploy KAMI721C with USDC payments
 		const KAMI721C = await ethers.getContractFactory('KAMI721C');
-		kami721c = await KAMI721C.deploy(await usdc.getAddress(), 'KAMI NFT', 'KAMI', 'https://api.example.com/token/');
+		kami721c = await KAMI721C.deploy(
+			await usdc.getAddress(),
+			'KAMI NFT',
+			'KAMI',
+			'https://api.example.com/token/',
+			parseUnits('1', 6) // 1 USDC as mint price
+		);
 		await kami721c.waitForDeployment();
 
 		// Deploy CreatorTokenTransferValidator
@@ -77,8 +83,8 @@ describe('KAMI721C with USDC Payments', function () {
 			expect(await kami721c.usdcToken()).to.equal(await usdc.getAddress());
 		});
 
-		it('Should set the correct MINT_PRICE', async function () {
-			expect(await kami721c.MINT_PRICE()).to.equal(MINT_PRICE);
+		it('Should set the correct mint price', async function () {
+			expect(await kami721c.mintPrice()).to.equal(MINT_PRICE);
 		});
 	});
 
@@ -125,7 +131,7 @@ describe('KAMI721C with USDC Payments', function () {
 
 		it('Should revert if user has insufficient USDC balance', async function () {
 			const poorUser = (await ethers.getSigners())[6];
-			await usdc.mint(await poorUser.getAddress(), parseUnits('50', 6)); // Only 50 USDC
+			await usdc.mint(await poorUser.getAddress(), parseUnits('0.5', 6)); // Only 0.5 USDC (less than mint price of 1 USDC)
 			await usdc.connect(poorUser).approve(await kami721c.getAddress(), MINT_PRICE);
 			await expect(kami721c.connect(poorUser).mint()).to.be.reverted;
 		});
@@ -146,11 +152,11 @@ describe('KAMI721C with USDC Payments', function () {
 
 			await kami721c.connect(user1).mint();
 
-			// 5% of 100 USDC = 5 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('5', 6));
+			// 5% of 1 USDC = 0.05 USDC
+			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('0.05', 6));
 
-			// 3% of 100 USDC = 3 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('3', 6));
+			// 3% of 1 USDC = 0.03 USDC
+			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('0.03', 6));
 		});
 
 		it('Should allow setting token-specific mint royalties', async function () {
@@ -171,8 +177,8 @@ describe('KAMI721C with USDC Payments', function () {
 			// Mint another token, this should use the default royalties
 			await kami721c.connect(user1).mint();
 
-			// 5% of 100 USDC = 5 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('5', 6));
+			// 5% of 1 USDC = 0.05 USDC
+			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('0.05', 6));
 
 			// For completeness, let's try to set token-specific royalties for already minted token
 			const tokenSpecificRoyalties = [
@@ -288,7 +294,6 @@ describe('KAMI721C with USDC Payments', function () {
 			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('15', 6));
 		});
 
-		// Skip this test since it fails due to ERC721C transfer validation issues
 		it('Should transfer with royalty payments in one step', async function () {
 			// Set up transfer royalties
 			const transferRoyalties = [
@@ -354,7 +359,7 @@ describe('KAMI721C with USDC Payments', function () {
 			await kami721c.connect(user1).setTransferPrice(0, salePrice);
 
 			// Pay transfer royalties
-			await usdc.connect(user2).approve(await kami721c.getAddress(), ethers.parseUnits('50', 6));
+			await usdc.connect(user2).approve(await kami721c.getAddress(), parseUnits('50', 6));
 			await kami721c.connect(user2).payTransferRoyalties(0);
 
 			// Check that token-specific royalties were used instead of default royalties
@@ -452,7 +457,7 @@ describe('KAMI721C with USDC Payments', function () {
 			await kami721c.connect(user1).mint();
 
 			// Receiver should get both royalty payments (5% + 3% = 8%)
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('8', 6));
+			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('0.08', 6));
 		});
 	});
 });

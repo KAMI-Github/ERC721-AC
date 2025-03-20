@@ -21,7 +21,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
     bytes32 public constant RENTER_ROLE = keccak256("RENTER_ROLE");
     
     uint256 private _nextTokenId;
-    uint256 public constant MINT_PRICE = 100 * 10**6; // 100 USDC (6 decimals)
+    uint256 public mintPrice; // Changed from constant to variable
     string private _baseTokenURI;
     
     // USDC token contract
@@ -56,13 +56,15 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
         address usdcAddress_,
         string memory name_,
         string memory symbol_,
-        string memory baseTokenURI_
+        string memory baseTokenURI_,
+        uint256 initialMintPrice_
     ) 
         ERC721OpenZeppelin(name_, symbol_)
     {
         require(usdcAddress_ != address(0), "Invalid USDC address");
         usdcToken = IERC20(usdcAddress_);
         _baseTokenURI = baseTokenURI_;
+        mintPrice = initialMintPrice_; // Set the initial mint price
         
         // Grant DEFAULT_ADMIN_ROLE and OWNER_ROLE to the deployer
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -220,7 +222,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
 
     function mint() external {
         // Transfer USDC from sender to this contract
-        usdcToken.safeTransferFrom(msg.sender, address(this), MINT_PRICE);
+        usdcToken.safeTransferFrom(msg.sender, address(this), mintPrice);
         
         uint256 tokenId = _nextTokenId++;
         _safeMint(msg.sender, tokenId);
@@ -237,7 +239,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
             
         if (royalties.length == 0) return;
         
-        uint256 totalAmount = MINT_PRICE;
+        uint256 totalAmount = mintPrice;
         uint256 totalDistributed = 0;
         
         for (uint i = 0; i < royalties.length; i++) {
@@ -408,4 +410,13 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
         uint32 operatorWhitelistId,
         uint32 permittedContractReceiversAllowlistId
     );
+
+    /**
+     * Set the mint price
+     * @param newMintPrice The new mint price in USDC (with 6 decimals)
+     */
+    function setMintPrice(uint256 newMintPrice) external {
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
+        mintPrice = newMintPrice;
+    }
 } 
