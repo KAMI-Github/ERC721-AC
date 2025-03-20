@@ -4,20 +4,23 @@
   <img src="https://img.shields.io/badge/Solidity-^0.8.24-red.svg" alt="Solidity Version">
   <img src="https://img.shields.io/badge/ERC721C-Compliant-blue.svg" alt="ERC721C Compliant">
   <img src="https://img.shields.io/badge/ERC2981-Royalties-green.svg" alt="ERC2981 Royalties">
+  <img src="https://img.shields.io/badge/AccessControl-Role_Based-purple.svg" alt="Role-Based Access Control">
 </div>
 
 ## 📑 Overview
 
-The `KAMI721C` contract is a modern implementation of an NFT collection that leverages USDC for payments and includes advanced royalty distribution capabilities. Built on ERC721C with support for multiple royalty receivers for both minting and transfers, it provides a flexible solution for game asset tokenization.
+The `KAMI721C` contract is a modern implementation of an NFT collection that leverages USDC for payments and includes advanced royalty distribution capabilities. Built on ERC721C with support for multiple royalty receivers for both minting and transfers, it provides a flexible solution for game asset tokenization with role-based access control.
 
 ## 🔧 Features
 
+-   **Role-Based Access Control**: Utilizes OpenZeppelin's AccessControl for flexible permission management
+-   **Multiple Roles**: Includes OWNER_ROLE, RENTER_ROLE, and PLATFORM_ROLE for granular access control
 -   **USDC Payments**: All transactions use USDC instead of native ETH
 -   **Multiple Royalty Receivers**: Supports multiple royalty recipients for both minting and transfers
 -   **Token-Specific Royalties**: Set different royalty structures per token
 -   **ERC2981 Compatible**: Full support for on-chain royalty information
 -   **Flexible Transfers**: Manual royalty payments or automatic distribution during transfers
--   **Withdrawal Management**: Secure USDC withdrawal by the contract owner
+-   **Secure Access Management**: Role-based permissions for administrative functions
 
 ## 📋 Prerequisites
 
@@ -62,13 +65,66 @@ KAMI721C kami721c = new KAMI721C(
 forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url <your_rpc_url> --private-key <your_private_key> --broadcast
 ```
 
+## 🔐 Role-Based Access Control
+
+The contract implements OpenZeppelin's AccessControl pattern with the following roles:
+
+### Available Roles
+
+-   **OWNER_ROLE**: Administrative role with permissions to manage contract settings, royalties, and platform commissions
+-   **RENTER_ROLE**: Role designed for users who can rent or temporarily use NFTs
+-   **PLATFORM_ROLE**: Special role for the platform address that receives commission fees
+
+### Role Management
+
+#### `grantRole(bytes32 role, address account)`
+
+Grants a role to an account. Can only be called by accounts with the DEFAULT_ADMIN_ROLE.
+
+```shell
+# Example to grant RENTER_ROLE to an address
+cast send --rpc-url <rpc_url> \
+  --private-key <admin_private_key> \
+  <contract_address> \
+  "grantRole(bytes32,address)" \
+  $(cast keccak "RENTER_ROLE") \
+  <account_address>
+```
+
+#### `revokeRole(bytes32 role, address account)`
+
+Revokes a role from an account. Can only be called by accounts with the DEFAULT_ADMIN_ROLE.
+
+```shell
+# Example to revoke RENTER_ROLE from an address
+cast send --rpc-url <rpc_url> \
+  --private-key <admin_private_key> \
+  <contract_address> \
+  "revokeRole(bytes32,address)" \
+  $(cast keccak "RENTER_ROLE") \
+  <account_address>
+```
+
+#### `hasRole(bytes32 role, address account)`
+
+Checks if an account has a specific role.
+
+```shell
+# Example to check if an address has OWNER_ROLE
+cast call --rpc-url <rpc_url> \
+  <contract_address> \
+  "hasRole(bytes32,address)" \
+  $(cast keccak "OWNER_ROLE") \
+  <account_address>
+```
+
 ## 📝 External Methods Guide
 
 ### Core Functions
 
 #### `mint()`
 
-Allows users to mint a new NFT by paying the fixed USDC mint price (100 USDC).
+Allows users to mint a new NFT by paying the fixed USDC mint price.
 
 ```shell
 # Using Cast
@@ -96,7 +152,7 @@ cast send --rpc-url <rpc_url> \
 
 #### `setMintRoyalties(RoyaltyData[] calldata royalties)`
 
-Sets global royalties distributed during minting. Only callable by contract owner.
+Sets global royalties distributed during minting. Only callable by users with OWNER_ROLE.
 
 ```shell
 # Example to set 5% royalty to address1 and 3% to address2
@@ -109,7 +165,7 @@ cast send --rpc-url <rpc_url> \
 
 #### `setTransferRoyalties(RoyaltyData[] calldata royalties)`
 
-Sets global royalties for token transfers. Only callable by contract owner.
+Sets global royalties for token transfers. Only callable by users with OWNER_ROLE.
 
 ```shell
 # Example to set 7% royalty to address1
@@ -122,7 +178,7 @@ cast send --rpc-url <rpc_url> \
 
 #### `setTokenMintRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`
 
-Sets token-specific mint royalties. Only callable by contract owner.
+Sets token-specific mint royalties. Only callable by users with OWNER_ROLE.
 
 ```shell
 # Example for token ID 0
@@ -136,7 +192,7 @@ cast send --rpc-url <rpc_url> \
 
 #### `setTokenTransferRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`
 
-Sets token-specific transfer royalties. Only callable by contract owner.
+Sets token-specific transfer royalties. Only callable by users with OWNER_ROLE.
 
 ```shell
 # Example for token ID 0
@@ -200,7 +256,7 @@ cast send --rpc-url <rpc_url> \
 
 #### `withdrawUSDC()`
 
-Allows the contract owner to withdraw all USDC held by the contract.
+Allows users with OWNER_ROLE to withdraw all USDC held by the contract.
 
 ```shell
 cast send --rpc-url <rpc_url> \
@@ -211,7 +267,7 @@ cast send --rpc-url <rpc_url> \
 
 #### `setBaseURI(string memory baseURI)`
 
-Updates the base URI for token metadata. Only callable by contract owner.
+Updates the base URI for token metadata. Only callable by users with OWNER_ROLE.
 
 ```shell
 cast send --rpc-url <rpc_url> \
@@ -221,9 +277,22 @@ cast send --rpc-url <rpc_url> \
   "https://new-metadata-api.com/tokens/"
 ```
 
+#### `setPlatformCommission(uint96 newPlatformCommissionPercentage, address newPlatformAddress)`
+
+Updates the platform commission percentage and platform address. Only callable by users with OWNER_ROLE.
+
+```shell
+cast send --rpc-url <rpc_url> \
+  --private-key <owner_private_key> \
+  <contract_address> \
+  "setPlatformCommission(uint96,address)" \
+  800 \  # 8% commission
+  <new_platform_address>
+```
+
 #### `setSecurityPolicy(uint8 securityLevel, uint32 operatorWhitelistId, uint32 permittedContractReceiversAllowlistId)`
 
-Sets the security policy for the ERC721C implementation. Only callable by contract owner.
+Sets the security policy for the ERC721C implementation. Only callable by users with OWNER_ROLE.
 
 ```shell
 cast send --rpc-url <rpc_url> \
@@ -236,6 +305,18 @@ cast send --rpc-url <rpc_url> \
 ```
 
 ### View Functions
+
+#### `hasRole(bytes32 role, address account)`
+
+Checks if an account has a specific role.
+
+```shell
+cast call --rpc-url <rpc_url> \
+  <contract_address> \
+  "hasRole(bytes32,address)" \
+  <role_bytes32> \
+  <account_address>
+```
 
 #### `getMintRoyaltyReceivers(uint256 tokenId)`
 
@@ -289,6 +370,8 @@ npx hardhat test
 -   USDC tokens must be approved before minting or paying royalties.
 -   The contract uses USDC with 6 decimals. Adjust values accordingly if using a different token.
 -   This contract inherits from ERC721C, which includes additional transfer security mechanics.
+-   Role management is controlled by accounts with the DEFAULT_ADMIN_ROLE.
+-   When deploying, the deployer automatically receives the OWNER_ROLE and DEFAULT_ADMIN_ROLE.
 
 ## 📜 License
 
@@ -344,7 +427,7 @@ $ anvil
 ### Deploy
 
 ```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+$ forge script script/DeployKAMI721C.s.sol:DeployKAMI721C --rpc-url <your_rpc_url> --private-key <your_private_key>
 ```
 
 ### Cast

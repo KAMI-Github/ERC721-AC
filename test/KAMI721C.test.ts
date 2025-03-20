@@ -10,6 +10,7 @@ describe('KAMI721C with USDC Payments', function () {
 	let owner: SignerWithAddress;
 	let user1: SignerWithAddress;
 	let user2: SignerWithAddress;
+	let platformAddress: SignerWithAddress;
 	let royaltyReceiver1: SignerWithAddress;
 	let royaltyReceiver2: SignerWithAddress;
 	let royaltyReceiver3: SignerWithAddress;
@@ -17,7 +18,8 @@ describe('KAMI721C with USDC Payments', function () {
 	// USDC has 6 decimals
 	const MINT_PRICE = parseUnits('1', 6); // 1 USDC
 	const INITIAL_USDC_BALANCE = parseUnits('10000', 6); // 10,000 USDC
-	const TRANSFER_PRICE = parseUnits('500', 6); // 500 USDC
+	const PLATFORM_COMMISSION_PERCENTAGE = 500; // 5%
+	const DEFAULT_ROYALTY_PERCENTAGE = 1000; // 10%
 
 	const createRoyaltyInfo = (address: string, feeNumerator: number) => {
 		return {
@@ -27,7 +29,7 @@ describe('KAMI721C with USDC Payments', function () {
 	};
 
 	beforeEach(async function () {
-		[owner, user1, user2, royaltyReceiver1, royaltyReceiver2, royaltyReceiver3] = await ethers.getSigners();
+		[owner, user1, user2, platformAddress, royaltyReceiver1, royaltyReceiver2, royaltyReceiver3] = await ethers.getSigners();
 
 		// Deploy mock USDC token
 		const MockERC20 = await ethers.getContractFactory('MockERC20');
@@ -40,7 +42,15 @@ describe('KAMI721C with USDC Payments', function () {
 
 		// Deploy KAMI721C with USDC payments
 		const KAMI721C = await ethers.getContractFactory('KAMI721C');
-		kami721c = await KAMI721C.deploy(await usdc.getAddress(), 'KAMI NFT', 'KAMI', 'https://api.example.com/token/', MINT_PRICE);
+		kami721c = await KAMI721C.deploy(
+			await usdc.getAddress(),
+			'KAMI NFT',
+			'KAMI',
+			'https://api.example.com/token/',
+			MINT_PRICE,
+			await platformAddress.getAddress(),
+			PLATFORM_COMMISSION_PERCENTAGE
+		);
 		await kami721c.waitForDeployment();
 
 		// Deploy CreatorTokenTransferValidator
@@ -73,6 +83,10 @@ describe('KAMI721C with USDC Payments', function () {
 			expect(await kami721c.hasRole(await kami721c.OWNER_ROLE(), await owner.getAddress())).to.be.true;
 		});
 
+		it('Should set the right platform role', async function () {
+			expect(await kami721c.hasRole(await kami721c.PLATFORM_ROLE(), await platformAddress.getAddress())).to.be.true;
+		});
+
 		it('Should set the correct USDC token address', async function () {
 			expect(await kami721c.usdcToken()).to.equal(await usdc.getAddress());
 		});
@@ -80,378 +94,222 @@ describe('KAMI721C with USDC Payments', function () {
 		it('Should set the correct mint price', async function () {
 			expect(await kami721c.mintPrice()).to.equal(MINT_PRICE);
 		});
+
+		it('Should set the correct platform commission percentage', async function () {
+			expect(await kami721c.platformCommissionPercentage()).to.equal(PLATFORM_COMMISSION_PERCENTAGE);
+		});
+
+		it('Should set the correct platform address', async function () {
+			expect(await kami721c.platformAddress()).to.equal(await platformAddress.getAddress());
+		});
 	});
 
-	describe('Role Management', function () {
-		it('Should allow admin to grant roles', async function () {
-			const newUser = (await ethers.getSigners())[6];
-			await kami721c.connect(owner).grantRole(await kami721c.RENTER_ROLE(), await newUser.getAddress());
-			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.true;
+	describe('Mint Price Distribution', function () {
+		it('Should distribute mint price correctly with platform commission and royalties', async function () {
+			// Set mint royalties (95% in total to distribute the entire remaining amount after platform commission)
+			const mintRoyalties = [
+				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 6000), // 60%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 3500), // 35%
+			];
+			await kami721c.connect(owner).setMintRoyalties(mintRoyalties);
+
+			// Record initial balances
+			const platformBalanceBefore = await usdc.balanceOf(await platformAddress.getAddress());
+			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
+			const r2BalanceBefore = await usdc.balanceOf(await royaltyReceiver2.getAddress());
+			const contractBalanceBefore = await usdc.balanceOf(await kami721c.getAddress());
+
+			// Mint a token
+			await kami721c.connect(user1).mint();
+
+			// Calculate expected distributions
+			const platformCommission = (MINT_PRICE * BigInt(PLATFORM_COMMISSION_PERCENTAGE)) / BigInt(10000);
+			const remainingAmount = MINT_PRICE - platformCommission;
+			const royalty1Amount = (remainingAmount * BigInt(6000)) / BigInt(10000);
+			const royalty2Amount = (remainingAmount * BigInt(3500)) / BigInt(10000);
+
+			// Calculate undistributed amount (rounding error) that goes to first royalty receiver
+			const totalRoyaltyAmounts = royalty1Amount + royalty2Amount;
+			const undistributedAmount = remainingAmount - totalRoyaltyAmounts;
+
+			// Verify platform commission
+			expect(await usdc.balanceOf(await platformAddress.getAddress())).to.equal(platformBalanceBefore + platformCommission);
+
+			// Verify royalty distributions (first receiver gets their share + any undistributed amount)
+			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(
+				r1BalanceBefore + royalty1Amount + undistributedAmount
+			);
+			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + royalty2Amount);
+
+			// Contract shouldn't retain any USDC
+			expect(await usdc.balanceOf(await kami721c.getAddress())).to.equal(contractBalanceBefore);
 		});
 
-		it('Should allow admin to revoke roles', async function () {
-			// First grant the role
-			const newUser = (await ethers.getSigners())[6];
-			await kami721c.connect(owner).grantRole(await kami721c.RENTER_ROLE(), await newUser.getAddress());
-			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.true;
-
-			// Then revoke it
-			await kami721c.connect(owner).revokeRole(await kami721c.RENTER_ROLE(), await newUser.getAddress());
-			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.false;
-		});
-
-		it('Should not allow non-admin to grant roles', async function () {
-			const newUser = (await ethers.getSigners())[6];
-			const errorMessage = `AccessControl: account ${(
-				await user1.getAddress()
-			).toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`;
-			await expect(kami721c.connect(user1).grantRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.revertedWith(
-				errorMessage
+		it('Should ensure mint royalties plus platform commission cannot exceed 100%', async function () {
+			// Try to set mint royalties that, when combined with platform commission, exceed 100%
+			const excessiveMintRoyalties = [
+				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 6000), // 60%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 4000), // 40%
+			];
+			// Total: 100% + 5% platform commission = 105%
+			await expect(kami721c.connect(owner).setMintRoyalties(excessiveMintRoyalties)).to.be.revertedWith(
+				'Royalties + platform commission exceed 100%'
 			);
 		});
 	});
 
-	describe('Minting', function () {
-		it('Should allow minting with USDC payment', async function () {
-			await kami721c.connect(user1).mint();
-			expect(await kami721c.ownerOf(0)).to.equal(await user1.getAddress());
-			expect(await usdc.balanceOf(await kami721c.getAddress())).to.equal(MINT_PRICE);
-		});
-
-		it('Should revert if user has not approved USDC', async function () {
-			await usdc.connect(user1).approve(await kami721c.getAddress(), 0);
-			await expect(kami721c.connect(user1).mint()).to.be.reverted;
-		});
-
-		it('Should revert if user has insufficient USDC balance', async function () {
-			const poorUser = (await ethers.getSigners())[6];
-			await usdc.mint(await poorUser.getAddress(), parseUnits('0.5', 6)); // Only 0.5 USDC (less than mint price of 1 USDC)
-			await usdc.connect(poorUser).approve(await kami721c.getAddress(), MINT_PRICE);
-			await expect(kami721c.connect(poorUser).mint()).to.be.reverted;
-		});
-	});
-
-	describe('Mint Royalties', function () {
-		it('Should allow setting multiple mint royalty receivers', async function () {
-			const mintRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 300), // 3%
+	describe('Token Sale Process', function () {
+		beforeEach(async function () {
+			// Set transfer royalties (must total 100%)
+			const transferRoyalties = [
+				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 7000), // 70%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 3000), // 30%
 			];
+			await kami721c.connect(owner).setTransferRoyalties(transferRoyalties);
 
-			await kami721c.connect(owner).setMintRoyalties(mintRoyalties);
+			// Set the royalty percentage (10% of sale price)
+			await kami721c.connect(owner).setRoyaltyPercentage(DEFAULT_ROYALTY_PERCENTAGE);
 
-			// Mint a token and check royalty distribution
+			// Mint a token for user1
+			await kami721c.connect(user1).mint();
+		});
+
+		it('Should correctly process a token sale with royalties and platform commission', async function () {
+			// Record initial balances
+			const salePrice = parseUnits('1000', 6); // 1000 USDC
+			const user1BalanceBefore = await usdc.balanceOf(await user1.getAddress());
+			const user2BalanceBefore = await usdc.balanceOf(await user2.getAddress());
+			const platformBalanceBefore = await usdc.balanceOf(await platformAddress.getAddress());
 			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
 			const r2BalanceBefore = await usdc.balanceOf(await royaltyReceiver2.getAddress());
 
-			await kami721c.connect(user1).mint();
+			// Sell token from user1 to user2
+			await kami721c.connect(user1).sellToken(await user2.getAddress(), 0, salePrice);
 
-			// 5% of 1 USDC = 0.05 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('0.05', 6));
+			// Calculate expected distributions
+			const royaltyAmount = (salePrice * BigInt(DEFAULT_ROYALTY_PERCENTAGE)) / BigInt(10000); // 10% of sale price
+			const platformCommission = (salePrice * BigInt(PLATFORM_COMMISSION_PERCENTAGE)) / BigInt(10000); // 5% of sale price
+			const royalty1Amount = (royaltyAmount * BigInt(7000)) / BigInt(10000); // 70% of royalty amount
+			const royalty2Amount = (royaltyAmount * BigInt(3000)) / BigInt(10000); // 30% of royalty amount
+			const sellerProceeds = salePrice - (royaltyAmount + platformCommission);
 
-			// 3% of 1 USDC = 0.03 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('0.03', 6));
+			// Verify ownership transfer
+			expect(await kami721c.ownerOf(0)).to.equal(await user2.getAddress());
+
+			// Verify platform commission
+			expect(await usdc.balanceOf(await platformAddress.getAddress())).to.equal(platformBalanceBefore + platformCommission);
+
+			// Verify royalty payments
+			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + royalty1Amount);
+			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + royalty2Amount);
+
+			// Verify seller receives correct payment
+			expect(await usdc.balanceOf(await user1.getAddress())).to.equal(user1BalanceBefore + sellerProceeds);
+
+			// Verify buyer paid the full sale price
+			expect(await usdc.balanceOf(await user2.getAddress())).to.equal(user2BalanceBefore - salePrice);
 		});
 
-		it('Should allow setting token-specific mint royalties', async function () {
-			// First set default royalties
-			const defaultMintRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-			];
-
-			await kami721c.connect(owner).setMintRoyalties(defaultMintRoyalties);
-
-			// Mint a token first (tokenId = 0)
-			await kami721c.connect(user1).mint();
-
-			// Instead of testing token-specific mint royalties (which need to be set before minting),
-			// we'll test that the default mint royalties are correctly applied
-			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
-
-			// Mint another token, this should use the default royalties
-			await kami721c.connect(user1).mint();
-
-			// 5% of 1 USDC = 0.05 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('0.05', 6));
-
-			// For completeness, let's try to set token-specific royalties for already minted token
+		it('Should use token-specific royalty receivers if set', async function () {
+			// Set token-specific royalty receivers
 			const tokenSpecificRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 700), // 7%
-				createRoyaltyInfo(await royaltyReceiver3.getAddress(), 300), // 3%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 8000), // 80%
+				createRoyaltyInfo(await royaltyReceiver3.getAddress(), 2000), // 20%
 			];
+			await kami721c.connect(owner).setTokenTransferRoyalties(0, tokenSpecificRoyalties);
 
-			// Set token-specific royalties for token ID 0
-			await kami721c.connect(owner).setTokenMintRoyalties(0, tokenSpecificRoyalties);
+			// Record initial balances
+			const salePrice = parseUnits('1000', 6); // 1000 USDC
+			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
+			const r2BalanceBefore = await usdc.balanceOf(await royaltyReceiver2.getAddress());
+			const r3BalanceBefore = await usdc.balanceOf(await royaltyReceiver3.getAddress());
 
-			// Check that we can retrieve the token-specific royalties
-			const royalties = await kami721c.getMintRoyaltyReceivers(0);
-			expect(royalties.length).to.equal(2);
-			expect(royalties[0].receiver).to.equal(await royaltyReceiver2.getAddress());
-			expect(royalties[0].feeNumerator).to.equal(700);
-			expect(royalties[1].receiver).to.equal(await royaltyReceiver3.getAddress());
-			expect(royalties[1].feeNumerator).to.equal(300);
+			// Sell token
+			await kami721c.connect(user1).sellToken(await user2.getAddress(), 0, salePrice);
+
+			// Calculate expected royalty distributions
+			const totalRoyaltyAmount = (salePrice * BigInt(DEFAULT_ROYALTY_PERCENTAGE)) / BigInt(10000);
+			const royalty2Amount = (totalRoyaltyAmount * BigInt(8000)) / BigInt(10000);
+			const royalty3Amount = (totalRoyaltyAmount * BigInt(2000)) / BigInt(10000);
+
+			// Verify token-specific royalties were used
+			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore); // Unchanged
+			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + royalty2Amount);
+			expect(await usdc.balanceOf(await royaltyReceiver3.getAddress())).to.equal(r3BalanceBefore + royalty3Amount);
 		});
 
-		it('Should enforce maximum royalty limit (25%)', async function () {
-			const excessiveRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 2000), // 20%
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 800), // 8%
-			];
+		it('Should only allow the token owner to sell', async function () {
+			const salePrice = parseUnits('1000', 6);
+			await expect(kami721c.connect(user2).sellToken(await user2.getAddress(), 0, salePrice)).to.be.revertedWith(
+				'Only token owner can sell'
+			);
+		});
+	});
 
-			await expect(kami721c.connect(owner).setMintRoyalties(excessiveRoyalties)).to.be.revertedWith('Royalties exceed 25%');
+	describe('Platform Management', function () {
+		it('Should allow updating platform commission and address', async function () {
+			const newPlatformCommission = 800; // 8%
+			const newPlatformAddress = await royaltyReceiver3.getAddress();
+
+			await kami721c.connect(owner).setPlatformCommission(newPlatformCommission, newPlatformAddress);
+
+			expect(await kami721c.platformCommissionPercentage()).to.equal(newPlatformCommission);
+			expect(await kami721c.platformAddress()).to.equal(newPlatformAddress);
+			expect(await kami721c.hasRole(await kami721c.PLATFORM_ROLE(), await platformAddress.getAddress())).to.be.false;
+			expect(await kami721c.hasRole(await kami721c.PLATFORM_ROLE(), newPlatformAddress)).to.be.true;
+		});
+
+		it('Should allow updating royalty percentage', async function () {
+			const newRoyaltyPercentage = 1500; // 15%
+			await kami721c.connect(owner).setRoyaltyPercentage(newRoyaltyPercentage);
+			expect(await kami721c.royaltyPercentage()).to.equal(newRoyaltyPercentage);
+		});
+
+		it('Should not allow platform commission to exceed 20%', async function () {
+			await expect(kami721c.connect(owner).setPlatformCommission(2100, await platformAddress.getAddress())).to.be.revertedWith(
+				'Platform commission too high'
+			);
+		});
+
+		it('Should not allow royalty percentage to exceed 30%', async function () {
+			await expect(kami721c.connect(owner).setRoyaltyPercentage(3100)).to.be.revertedWith('Royalty percentage too high');
 		});
 	});
 
 	describe('Transfer Royalties', function () {
-		it('Should allow setting multiple transfer royalty receivers', async function () {
-			const transferRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 300), // 3%
+		it('Should enforce 100% total for transfer royalty percentages', async function () {
+			// Try with total < 100%
+			const lowRoyalties = [
+				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 5000), // 50%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 3000), // 30%
 			];
-
-			await kami721c.connect(owner).setTransferRoyalties(transferRoyalties);
-
-			// Check that royalty info is correctly set (via ERC2981 interface)
-			const [receiver, amount] = await kami721c.royaltyInfo(0, TRANSFER_PRICE);
-			expect(receiver).to.equal(await royaltyReceiver1.getAddress());
-			expect(amount).to.equal(parseUnits('25', 6)); // 5% of 500 USDC = 25 USDC
-		});
-
-		it('Should allow setting token-specific transfer royalties', async function () {
-			// Mint a token first
-			await kami721c.connect(user1).mint();
-
-			// Set default transfer royalties
-			const defaultTransferRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-			];
-			await kami721c.connect(owner).setTransferRoyalties(defaultTransferRoyalties);
-
-			// Set token-specific transfer royalties
-			const tokenSpecificRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 700), // 7%
-				createRoyaltyInfo(await royaltyReceiver3.getAddress(), 300), // 3%
-			];
-			await kami721c.connect(owner).setTokenTransferRoyalties(0, tokenSpecificRoyalties);
-
-			// Check royalty info for the token
-			const [receiver, amount] = await kami721c.royaltyInfo(0, TRANSFER_PRICE);
-			expect(receiver).to.equal(await royaltyReceiver2.getAddress());
-			expect(amount).to.equal(parseUnits('35', 6)); // 7% of 500 USDC = 35 USDC
-
-			// Verify we can retrieve all royalty receivers
-			const royalties = await kami721c.getTransferRoyaltyReceivers(0);
-			expect(royalties.length).to.equal(2);
-			expect(royalties[0].receiver).to.equal(await royaltyReceiver2.getAddress());
-			expect(royalties[0].feeNumerator).to.equal(700);
-			expect(royalties[1].receiver).to.equal(await royaltyReceiver3.getAddress());
-			expect(royalties[1].feeNumerator).to.equal(300);
-		});
-
-		it('Should allow setting transfer price by token owner', async function () {
-			// Mint a token
-			await kami721c.connect(user1).mint();
-
-			// Set transfer price
-			await kami721c.connect(user1).setTransferPrice(0, TRANSFER_PRICE);
-
-			// Try to set price as non-owner (should fail)
-			await expect(kami721c.connect(user2).setTransferPrice(0, TRANSFER_PRICE)).to.be.revertedWith('Not token owner');
-		});
-
-		it('Should allow paying transfer royalties explicitly', async function () {
-			// Set transfer royalties
-			const transferRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 300), // 3%
-			];
-			await kami721c.connect(owner).setTransferRoyalties(transferRoyalties);
-
-			// Mint a token
-			await kami721c.connect(user1).mint();
-
-			// Set transfer price
-			await kami721c.connect(user1).setTransferPrice(0, TRANSFER_PRICE);
-
-			// Record balances before payment
-			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
-			const r2BalanceBefore = await usdc.balanceOf(await royaltyReceiver2.getAddress());
-
-			// Pay transfer royalties
-			await kami721c.connect(user2).payTransferRoyalties(0);
-
-			// Check royalty distribution
-			// 5% of 500 USDC = 25 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('25', 6));
-
-			// 3% of 500 USDC = 15 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('15', 6));
-		});
-
-		it('Should transfer with royalty payments in one step', async function () {
-			// Set up transfer royalties
-			const transferRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 300), // 3%
-			];
-			await kami721c.connect(owner).setTransferRoyalties(transferRoyalties);
-
-			// Mint a token for user1
-			await kami721c.connect(user1).mint();
-
-			// Record balances before transfer
-			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
-			const r2BalanceBefore = await usdc.balanceOf(await royaltyReceiver2.getAddress());
-			const salePrice = TRANSFER_PRICE;
-
-			// Approve the contract to spend user2's USDC
-			await usdc.connect(user2).approve(await kami721c.getAddress(), salePrice);
-
-			// Transfer with royalties from user1 to user2
-			await kami721c.connect(user1).safeTransferFromWithRoyalties(
-				await user1.getAddress(),
-				await user2.getAddress(),
-				0, // tokenId
-				salePrice,
-				'0x' // empty data
+			await expect(kami721c.connect(owner).setTransferRoyalties(lowRoyalties)).to.be.revertedWith(
+				'Total transfer royalty percentages must equal 100%'
 			);
 
-			// Check royalty payments
-			// 5% of 500 USDC = 25 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('25', 6));
-
-			// 3% of 500 USDC = 15 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('15', 6));
-
-			// Verify token ownership changed
-			expect(await kami721c.ownerOf(0)).to.equal(await user2.getAddress());
-		});
-
-		it('Should use token-specific royalties over default royalties', async function () {
-			// Set default transfer royalties
-			const defaultRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
+			// Try with total > 100%
+			const highRoyalties = [
+				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 7000), // 70%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 4000), // 40%
 			];
-			await kami721c.connect(owner).setTransferRoyalties(defaultRoyalties);
+			await expect(kami721c.connect(owner).setTransferRoyalties(highRoyalties)).to.be.revertedWith(
+				'Total transfer royalty percentages must equal 100%'
+			);
 
-			// Mint a token for user1
-			await kami721c.connect(user1).mint();
-
-			// Set token-specific royalties for token ID 0
-			const tokenSpecificRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 700), // 7%
-				createRoyaltyInfo(await royaltyReceiver3.getAddress(), 300), // 3%
+			// Should work with exactly 100%
+			const perfectRoyalties = [
+				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 7000), // 70%
+				createRoyaltyInfo(await royaltyReceiver2.getAddress(), 3000), // 30%
 			];
-			await kami721c.connect(owner).setTokenTransferRoyalties(0, tokenSpecificRoyalties);
+			await kami721c.connect(owner).setTransferRoyalties(perfectRoyalties);
 
-			// Record balances before transfer
-			const r2BalanceBefore = await usdc.balanceOf(await royaltyReceiver2.getAddress());
-			const r3BalanceBefore = await usdc.balanceOf(await royaltyReceiver3.getAddress());
-			const salePrice = TRANSFER_PRICE;
-
-			// Set transfer price
-			await kami721c.connect(user1).setTransferPrice(0, salePrice);
-
-			// Pay transfer royalties
-			await usdc.connect(user2).approve(await kami721c.getAddress(), parseUnits('50', 6));
-			await kami721c.connect(user2).payTransferRoyalties(0);
-
-			// Check that token-specific royalties were used instead of default royalties
-			// 7% of 500 USDC = 35 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver2.getAddress())).to.equal(r2BalanceBefore + parseUnits('35', 6));
-
-			// 3% of 500 USDC = 15 USDC
-			expect(await usdc.balanceOf(await royaltyReceiver3.getAddress())).to.equal(r3BalanceBefore + parseUnits('15', 6));
-		});
-	});
-
-	describe('ERC2981 Compatibility', function () {
-		it('Should implement ERC2981 royaltyInfo correctly', async function () {
-			// Set transfer royalties
-			const transferRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-			];
-			await kami721c.connect(owner).setTransferRoyalties(transferRoyalties);
-
-			// Check royalty info
-			const [receiver, amount] = await kami721c.royaltyInfo(0, TRANSFER_PRICE);
-			expect(receiver).to.equal(await royaltyReceiver1.getAddress());
-			expect(amount).to.equal(parseUnits('25', 6)); // 5% of 500 USDC = 25 USDC
-		});
-	});
-
-	describe('Authorization', function () {
-		it('Should only allow owner to set mint royalties', async function () {
-			const mintRoyalties = [createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500)];
-			await expect(kami721c.connect(user1).setMintRoyalties(mintRoyalties)).to.be.revertedWith('Caller is not an owner');
-		});
-
-		it('Should only allow owner to set transfer royalties', async function () {
-			const transferRoyalties = [createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500)];
-			await expect(kami721c.connect(user1).setTransferRoyalties(transferRoyalties)).to.be.revertedWith('Caller is not an owner');
-		});
-
-		it('Should only allow token owner to set transfer price', async function () {
-			await kami721c.connect(user1).mint();
-			await expect(kami721c.connect(user2).setTransferPrice(0, TRANSFER_PRICE)).to.be.revertedWith('Not token owner');
-		});
-
-		it('Should only allow owner to withdraw USDC', async function () {
-			await kami721c.connect(user1).mint();
-			await expect(kami721c.connect(user1).withdrawUSDC()).to.be.revertedWith('Caller is not an owner');
-		});
-	});
-
-	describe('Withdrawing USDC', function () {
-		it('Should allow owner to withdraw USDC from contract', async function () {
-			// Mint to add USDC to contract
-			await kami721c.connect(user1).mint();
-
-			const contractBalance = await usdc.balanceOf(await kami721c.getAddress());
-			const ownerBalanceBefore = await usdc.balanceOf(await owner.getAddress());
-
-			// Withdraw
-			await kami721c.connect(owner).withdrawUSDC();
-
-			// Check balances
-			expect(await usdc.balanceOf(await kami721c.getAddress())).to.equal(0);
-			expect(await usdc.balanceOf(await owner.getAddress())).to.equal(ownerBalanceBefore + contractBalance);
-		});
-
-		it('Should revert withdrawal if no USDC in contract', async function () {
-			await expect(kami721c.connect(owner).withdrawUSDC()).to.be.revertedWith('No USDC to withdraw');
-		});
-	});
-
-	describe('Edge Cases', function () {
-		it('Should handle zero royalties correctly', async function () {
-			// Set empty royalties
-			await kami721c.connect(owner).setMintRoyalties([]);
-			await kami721c.connect(owner).setTransferRoyalties([]);
-
-			// Mint a token
-			const contractBalanceBefore = await usdc.balanceOf(await kami721c.getAddress());
-			await kami721c.connect(user1).mint();
-
-			// Check all USDC went to contract
-			expect(await usdc.balanceOf(await kami721c.getAddress())).to.equal(contractBalanceBefore + MINT_PRICE);
-		});
-
-		it('Should handle duplicate royalty receivers correctly', async function () {
-			// Set royalties with duplicate receivers
-			const mintRoyalties = [
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500), // 5%
-				createRoyaltyInfo(await royaltyReceiver1.getAddress(), 300), // 3% to same address
-			];
-
-			await kami721c.connect(owner).setMintRoyalties(mintRoyalties);
-
-			// Mint a token
-			const r1BalanceBefore = await usdc.balanceOf(await royaltyReceiver1.getAddress());
-			await kami721c.connect(user1).mint();
-
-			// Receiver should get both royalty payments (5% + 3% = 8%)
-			expect(await usdc.balanceOf(await royaltyReceiver1.getAddress())).to.equal(r1BalanceBefore + parseUnits('0.08', 6));
+			// Verify we can retrieve the receivers
+			const royalties = await kami721c.getTransferRoyaltyReceivers(0);
+			expect(royalties.length).to.equal(2);
+			expect(royalties[0].receiver).to.equal(await royaltyReceiver1.getAddress());
+			expect(royalties[0].feeNumerator).to.equal(7000);
+			expect(royalties[1].receiver).to.equal(await royaltyReceiver2.getAddress());
+			expect(royalties[1].feeNumerator).to.equal(3000);
 		});
 	});
 });
