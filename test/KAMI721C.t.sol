@@ -53,6 +53,10 @@ contract KAMI721CTest is Test {
         validator.addToList(0, user1);
         validator.addToList(0, user2);
         
+        // Grant RENTER_ROLE to user1 and user2
+        kami721c.grantRole(kami721c.RENTER_ROLE(), user1);
+        kami721c.grantRole(kami721c.RENTER_ROLE(), user2);
+        
         vm.stopPrank();
         
         // Mint USDC to users
@@ -271,7 +275,7 @@ contract KAMI721CTest is Test {
         
         // Attempt to set royalties as non-owner
         vm.prank(user1);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert("Caller is not an owner");
         kami721c.setMintRoyalties(royalties);
         
         // Mint token
@@ -285,7 +289,24 @@ contract KAMI721CTest is Test {
         
         // Attempt to withdraw USDC as non-owner
         vm.prank(user1);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert("Caller is not an owner");
         kami721c.withdrawUSDC();
+    }
+    
+    function testRoleManagement() public {
+        // Test granting role
+        vm.prank(owner);
+        kami721c.grantRole(kami721c.RENTER_ROLE(), address(0x123));
+        assertTrue(kami721c.hasRole(kami721c.RENTER_ROLE(), address(0x123)));
+        
+        // Test revoking role
+        vm.prank(owner);
+        kami721c.revokeRole(kami721c.RENTER_ROLE(), address(0x123));
+        assertFalse(kami721c.hasRole(kami721c.RENTER_ROLE(), address(0x123)));
+        
+        // Test role grant by non-owner
+        vm.prank(user1);
+        vm.expectRevert("AccessControl: account is missing role");
+        kami721c.grantRole(kami721c.RENTER_ROLE(), address(0x456));
     }
 } 

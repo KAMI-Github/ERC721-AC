@@ -20,66 +20,31 @@ contract DeployKAMI721C is Script {
     address constant MUMBAI_USDC = 0xe11A86849d99F524cAC3E7A0Ec1241828e332C62;
 
     function run() public {
-        // Get configuration from environment variables or use defaults
-        string memory nftName = vm.envString("NFT_NAME");
-        if (bytes(nftName).length == 0) {
-            nftName = "KAMI NFT Collection";
-        }
-        
-        string memory nftSymbol = vm.envString("NFT_SYMBOL");
-        if (bytes(nftSymbol).length == 0) {
-            nftSymbol = "KAMI";
-        }
-        
-        string memory baseURI = vm.envString("BASE_URI");
-        if (bytes(baseURI).length == 0) {
-            baseURI = "https://metadata-api.example.com/token/";
-        }
-        
-        uint8 securityLevel = 1;
-        if (vm.envUint("SECURITY_LEVEL") != 0) {
-            securityLevel = uint8(vm.envUint("SECURITY_LEVEL"));
-        }
-        
-        // Get network-specific USDC address or deploy a mock
-        address usdcAddress;
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        vm.startBroadcast(deployerPrivateKey);
+
+        // Get the current chain ID
         uint256 chainId = block.chainid;
         
-        if (chainId == 1) { // Mainnet
-            usdcAddress = vm.envAddress("MAINNET_USDC_ADDRESS");
-            if (usdcAddress == address(0)) {
-                usdcAddress = MAINNET_USDC;
-            }
+        // Determine which USDC address to use based on chain ID
+        address usdcAddress;
+        if (chainId == 1) { // Ethereum Mainnet
+            usdcAddress = MAINNET_USDC;
         } else if (chainId == 5) { // Goerli
-            usdcAddress = vm.envAddress("GOERLI_USDC_ADDRESS");
-            if (usdcAddress == address(0)) {
-                usdcAddress = GOERLI_USDC;
-            }
+            usdcAddress = GOERLI_USDC;
         } else if (chainId == 11155111) { // Sepolia
-            usdcAddress = vm.envAddress("SEPOLIA_USDC_ADDRESS");
-            if (usdcAddress == address(0)) {
-                usdcAddress = SEPOLIA_USDC;
-            }
-        } else if (chainId == 137) { // Polygon
-            usdcAddress = vm.envAddress("POLYGON_USDC_ADDRESS");
-            if (usdcAddress == address(0)) {
-                usdcAddress = POLYGON_USDC;
-            }
+            usdcAddress = SEPOLIA_USDC;
+        } else if (chainId == 137) { // Polygon Mainnet
+            usdcAddress = POLYGON_USDC;
         } else if (chainId == 80001) { // Mumbai
-            usdcAddress = vm.envAddress("MUMBAI_USDC_ADDRESS");
-            if (usdcAddress == address(0)) {
-                usdcAddress = MUMBAI_USDC;
-            }
-        }
-        
-        vm.startBroadcast();
-        
-        // If on a local network, deploy a mock USDC
-        if (chainId == 31337 || chainId == 1337) {
+            usdcAddress = MUMBAI_USDC;
+        } else if (chainId == 31337 || chainId == 1337) {
             console.log("Deploying MockERC20 as USDC on local network...");
             MockERC20 mockUsdc = new MockERC20("USD Coin", "USDC", 6);
             usdcAddress = address(mockUsdc);
             console.log("MockERC20 (USDC) deployed to: %s", usdcAddress);
+        } else {
+            revert("Unsupported network");
         }
         
         // Deploy the transfer validator
@@ -115,6 +80,10 @@ contract DeployKAMI721C is Script {
         // Add msg.sender to operator whitelist for easier testing
         console.log("Adding deployer to operator whitelist...");
         validator.addToList(0, msg.sender);
+        
+        // Grant RENTER_ROLE to msg.sender for testing
+        console.log("Granting RENTER_ROLE to deployer...");
+        kami721c.grantRole(kami721c.RENTER_ROLE(), msg.sender);
         
         console.log("Deployment completed successfully!");
         console.log("-----------------------------------");

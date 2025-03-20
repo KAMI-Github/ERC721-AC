@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/common/ERC2981.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@limitbreak/creator-token-standards/src/access/OwnableBasic.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@limitbreak/creator-token-standards/src/erc721c/ERC721C.sol";
 import "@limitbreak/creator-token-standards/src/programmable-royalties/BasicRoyalties.sol";
 import "@limitbreak/creator-token-standards/src/interfaces/ITransferValidator.sol";
@@ -13,8 +13,12 @@ import "@limitbreak/creator-token-standards/src/interfaces/ITransferValidator.so
  * @title KAMI721C
  * @dev An ERC721C implementation with USDC payments and programmable royalties for both minting and transfers
  */
-contract KAMI721C is OwnableBasic, ERC721C, ERC2981 {
+contract KAMI721C is AccessControl, ERC721C, ERC2981 {
     using SafeERC20 for IERC20;
+    
+    // Role definitions
+    bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
+    bytes32 public constant RENTER_ROLE = keccak256("RENTER_ROLE");
     
     uint256 private _nextTokenId;
     uint256 public constant MINT_PRICE = 100 * 10**6; // 100 USDC (6 decimals)
@@ -55,22 +59,34 @@ contract KAMI721C is OwnableBasic, ERC721C, ERC2981 {
         string memory baseTokenURI_
     ) 
         ERC721OpenZeppelin(name_, symbol_)
-        OwnableBasic()
     {
         require(usdcAddress_ != address(0), "Invalid USDC address");
         usdcToken = IERC20(usdcAddress_);
         _baseTokenURI = baseTokenURI_;
+        
+        // Grant DEFAULT_ADMIN_ROLE and OWNER_ROLE to the deployer
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(OWNER_ROLE, msg.sender);
+    }
+
+    /**
+     * @dev Required implementation for OwnablePermissions
+     * This function checks if the caller has the OWNER_ROLE
+     */
+    function _requireCallerIsContractOwner() internal view virtual override {
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
     }
 
     function supportsInterface(bytes4 interfaceId) 
         public 
         view 
         virtual 
-        override(ERC721C, ERC2981) 
+        override(ERC721C, ERC2981, AccessControl) 
         returns (bool) 
     {
         return ERC721C.supportsInterface(interfaceId) ||
-            ERC2981.supportsInterface(interfaceId);
+            ERC2981.supportsInterface(interfaceId) ||
+            AccessControl.supportsInterface(interfaceId);
     }
     
     // Setting default royalty receivers for minting
@@ -347,7 +363,7 @@ contract KAMI721C is OwnableBasic, ERC721C, ERC2981 {
      * @dev Withdraw USDC from contract to owner
      */
     function withdrawUSDC() external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         uint256 balance = usdcToken.balanceOf(address(this));
         require(balance > 0, "No USDC to withdraw");
         usdcToken.safeTransfer(msg.sender, balance);
@@ -358,7 +374,7 @@ contract KAMI721C is OwnableBasic, ERC721C, ERC2981 {
     }
 
     function setBaseURI(string memory baseURI) external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         _baseTokenURI = baseURI;
     }
 
@@ -372,7 +388,7 @@ contract KAMI721C is OwnableBasic, ERC721C, ERC2981 {
         uint32 operatorWhitelistId,
         uint32 permittedContractReceiversAllowlistId
     ) external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         
         // Store the security policy parameters for later use
         // This is a fallback since we can't directly call the validator's method

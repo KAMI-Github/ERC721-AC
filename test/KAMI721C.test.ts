@@ -69,8 +69,8 @@ describe('KAMI721C with USDC Payments', function () {
 	});
 
 	describe('Deployment', function () {
-		it('Should set the right owner', async function () {
-			expect(await kami721c.owner()).to.equal(await owner.getAddress());
+		it('Should set the right owner role', async function () {
+			expect(await kami721c.hasRole(await kami721c.OWNER_ROLE(), await owner.getAddress())).to.be.true;
 		});
 
 		it('Should set the correct USDC token address', async function () {
@@ -79,6 +79,35 @@ describe('KAMI721C with USDC Payments', function () {
 
 		it('Should set the correct MINT_PRICE', async function () {
 			expect(await kami721c.MINT_PRICE()).to.equal(MINT_PRICE);
+		});
+	});
+
+	describe('Role Management', function () {
+		it('Should allow admin to grant roles', async function () {
+			const newUser = (await ethers.getSigners())[6];
+			await kami721c.connect(owner).grantRole(await kami721c.RENTER_ROLE(), await newUser.getAddress());
+			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.true;
+		});
+
+		it('Should allow admin to revoke roles', async function () {
+			// First grant the role
+			const newUser = (await ethers.getSigners())[6];
+			await kami721c.connect(owner).grantRole(await kami721c.RENTER_ROLE(), await newUser.getAddress());
+			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.true;
+
+			// Then revoke it
+			await kami721c.connect(owner).revokeRole(await kami721c.RENTER_ROLE(), await newUser.getAddress());
+			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.false;
+		});
+
+		it('Should not allow non-admin to grant roles', async function () {
+			const newUser = (await ethers.getSigners())[6];
+			const errorMessage = `AccessControl: account ${(
+				await user1.getAddress()
+			).toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`;
+			await expect(kami721c.connect(user1).grantRole(await kami721c.RENTER_ROLE(), await newUser.getAddress())).to.be.revertedWith(
+				errorMessage
+			);
 		});
 	});
 
@@ -355,14 +384,12 @@ describe('KAMI721C with USDC Payments', function () {
 	describe('Authorization', function () {
 		it('Should only allow owner to set mint royalties', async function () {
 			const mintRoyalties = [createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500)];
-			await expect(kami721c.connect(user1).setMintRoyalties(mintRoyalties)).to.be.revertedWith('Ownable: caller is not the owner');
+			await expect(kami721c.connect(user1).setMintRoyalties(mintRoyalties)).to.be.revertedWith('Caller is not an owner');
 		});
 
 		it('Should only allow owner to set transfer royalties', async function () {
 			const transferRoyalties = [createRoyaltyInfo(await royaltyReceiver1.getAddress(), 500)];
-			await expect(kami721c.connect(user1).setTransferRoyalties(transferRoyalties)).to.be.revertedWith(
-				'Ownable: caller is not the owner'
-			);
+			await expect(kami721c.connect(user1).setTransferRoyalties(transferRoyalties)).to.be.revertedWith('Caller is not an owner');
 		});
 
 		it('Should only allow token owner to set transfer price', async function () {
@@ -372,7 +399,7 @@ describe('KAMI721C with USDC Payments', function () {
 
 		it('Should only allow owner to withdraw USDC', async function () {
 			await kami721c.connect(user1).mint();
-			await expect(kami721c.connect(user1).withdrawUSDC()).to.be.revertedWith('Ownable: caller is not the owner');
+			await expect(kami721c.connect(user1).withdrawUSDC()).to.be.revertedWith('Caller is not an owner');
 		});
 	});
 
