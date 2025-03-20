@@ -40,13 +40,7 @@ describe('KAMI721C with USDC Payments', function () {
 
 		// Deploy KAMI721C with USDC payments
 		const KAMI721C = await ethers.getContractFactory('KAMI721C');
-		kami721c = await KAMI721C.deploy(
-			await usdc.getAddress(),
-			'KAMI NFT',
-			'KAMI',
-			'https://api.example.com/token/',
-			parseUnits('1', 6) // 1 USDC as mint price
-		);
+		kami721c = await KAMI721C.deploy(await usdc.getAddress(), 'KAMI NFT', 'KAMI', 'https://api.example.com/token/', MINT_PRICE);
 		await kami721c.waitForDeployment();
 
 		// Deploy CreatorTokenTransferValidator
