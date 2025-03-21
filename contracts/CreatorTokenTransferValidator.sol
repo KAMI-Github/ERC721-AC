@@ -284,14 +284,14 @@ contract CreatorTokenTransferValidator is ITransferValidator, ERC165, Ownable {
     /**
      * @dev Implementation of validateTransfer with tokenId
      */
-    function validateTransfer(address caller, address from, address to, uint256 tokenId) external view override {
+    function validateTransfer(address caller, address from, address to, uint256 /* tokenId */) external view override {
         _validateTransferWithPolicy(msg.sender, caller, from, to);
     }
     
     /**
      * @dev Implementation of validateTransfer with amount
      */
-    function validateTransfer(address caller, address from, address to, uint256 tokenId, uint256 amount) external override {
+    function validateTransfer(address caller, address from, address to, uint256 /* tokenId */, uint256 /* amount */) external view override {
         _validateTransferWithPolicy(msg.sender, caller, from, to);
     }
     
