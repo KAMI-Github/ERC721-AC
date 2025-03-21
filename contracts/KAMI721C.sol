@@ -6,15 +6,13 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@limitbreak/creator-token-standards/src/erc721c/ERC721C.sol";
-import "@limitbreak/creator-token-standards/src/programmable-royalties/BasicRoyalties.sol";
-import "@limitbreak/creator-token-standards/src/interfaces/ITransferValidator.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 
 /**
  * @title KAMI721C
- * @dev An ERC721C implementation with USDC payments and programmable royalties for both minting and transfers
+ * @dev An ERC721 implementation with USDC payments and programmable royalties for both minting and transfers
  */
-contract KAMI721C is AccessControl, ERC721C, ERC2981 {
+contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
     using SafeERC20 for IERC20;
     using Counters for Counters.Counter;
     
@@ -72,7 +70,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
         address platformAddress_,
         uint96 platformCommissionPercentage_
     ) 
-        ERC721OpenZeppelin(name_, symbol_)
+        ERC721(name_, symbol_)
     {
         require(usdcAddress_ != address(0), "Invalid USDC address");
         require(platformAddress_ != address(0), "Invalid platform address");
@@ -90,22 +88,14 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
         _grantRole(PLATFORM_ROLE, platformAddress_);
     }
 
-    /**
-     * @dev Required implementation for OwnablePermissions
-     * This function checks if the caller has the OWNER_ROLE
-     */
-    function _requireCallerIsContractOwner() internal view virtual override {
-        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
-    }
-
     function supportsInterface(bytes4 interfaceId) 
         public 
         view 
         virtual 
-        override(ERC721C, ERC2981, AccessControl) 
+        override(ERC721Enumerable, ERC2981, AccessControl) 
         returns (bool) 
     {
-        return ERC721C.supportsInterface(interfaceId) ||
+        return ERC721Enumerable.supportsInterface(interfaceId) ||
             ERC2981.supportsInterface(interfaceId) ||
             AccessControl.supportsInterface(interfaceId);
     }
@@ -152,7 +142,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
     
     // Setting default royalty receivers for minting
     function setMintRoyalties(RoyaltyData[] calldata royalties) external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         delete _mintRoyaltyReceivers;
         
         uint96 totalFees = 0;
@@ -170,7 +160,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
     
     // Setting default royalty receivers for transfers
     function setTransferRoyalties(RoyaltyData[] calldata royalties) external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         delete _transferRoyaltyReceivers;
         
         uint96 totalFees = 0;
@@ -193,7 +183,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
     
     // Setting token-specific mint royalties
     function setTokenMintRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties) external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         require(_exists(tokenId), "Token does not exist");
         
         delete _tokenMintRoyalties[tokenId];
@@ -213,7 +203,7 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
     
     // Setting token-specific transfer royalties
     function setTokenTransferRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties) external {
-        _requireCallerIsContractOwner();
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         require(_exists(tokenId), "Token does not exist");
         
         delete _tokenTransferRoyalties[tokenId];
@@ -385,19 +375,9 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
         usdcToken.safeTransfer(seller, sellerProceeds);
         
         // Transfer the token
-        _safeTransfer(seller, to, tokenId, "");
+        safeTransferFrom(seller, to, tokenId);
         
         emit TokenSold(tokenId, seller, to, salePrice);
-    }
-    
-    // Override _beforeTokenTransfer to properly call superclass method
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 firstTokenId,
-        uint256 batchSize
-    ) internal virtual override {
-        super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
     }
 
     function _baseURI() internal view virtual override returns (string memory) {
@@ -413,32 +393,6 @@ contract KAMI721C is AccessControl, ERC721C, ERC2981 {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
         _burn(tokenId);
     }
-
-    function setSecurityPolicy(
-        uint8 securityLevel,
-        uint32 operatorWhitelistId,
-        uint32 permittedContractReceiversAllowlistId
-    ) external {
-        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
-        
-        // Store the security policy parameters for later use
-        // This is a fallback since we can't directly call the validator's method
-        // In a real implementation, you would call the appropriate method on the validator
-        emit SecurityPolicyUpdated(
-            address(this),
-            securityLevel,
-            operatorWhitelistId,
-            permittedContractReceiversAllowlistId
-        );
-    }
-    
-    // Event to track security policy updates
-    event SecurityPolicyUpdated(
-        address indexed collection,
-        uint8 securityLevel,
-        uint32 operatorWhitelistId,
-        uint32 permittedContractReceiversAllowlistId
-    );
 
     /**
      * Set the mint price

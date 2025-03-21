@@ -6,7 +6,6 @@ import { parseUnits } from 'ethers';
 describe('KAMI721C with USDC Payments', function () {
 	let kami721c: any;
 	let usdc: any;
-	let validator: any;
 	let owner: SignerWithAddress;
 	let user1: SignerWithAddress;
 	let user2: SignerWithAddress;
@@ -53,26 +52,6 @@ describe('KAMI721C with USDC Payments', function () {
 		);
 		await kami721c.waitForDeployment();
 
-		// Deploy CreatorTokenTransferValidator
-		const CreatorTokenTransferValidator = await ethers.getContractFactory('CreatorTokenTransferValidator');
-		validator = await CreatorTokenTransferValidator.deploy();
-		await validator.waitForDeployment();
-
-		// Register validator with KAMI721C
-		await kami721c.connect(owner).setTransferValidator(await validator.getAddress());
-
-		// Configure the validator
-		await validator.setCollectionSecurityPolicy(
-			await kami721c.getAddress(),
-			1, // Security level 1 - Most permissive
-			0, // Default operator whitelist
-			0 // Default contract allowlist
-		);
-
-		// Add users to whitelist
-		await validator.addToList(0, await user1.getAddress());
-		await validator.addToList(0, await user2.getAddress());
-
 		// Approve USDC spending for users
 		await usdc.connect(user1).approve(await kami721c.getAddress(), INITIAL_USDC_BALANCE);
 		await usdc.connect(user2).approve(await kami721c.getAddress(), INITIAL_USDC_BALANCE);
@@ -101,6 +80,12 @@ describe('KAMI721C with USDC Payments', function () {
 
 		it('Should set the correct platform address', async function () {
 			expect(await kami721c.platformAddress()).to.equal(await platformAddress.getAddress());
+		});
+
+		it('Should implement ERC721Enumerable functionality', async function () {
+			// Check supportsInterface for ERC721Enumerable
+			const ERC721EnumerableInterfaceId = '0x780e9d63';
+			expect(await kami721c.supportsInterface(ERC721EnumerableInterfaceId)).to.be.true;
 		});
 	});
 
@@ -310,6 +295,49 @@ describe('KAMI721C with USDC Payments', function () {
 			expect(royalties[0].feeNumerator).to.equal(7000);
 			expect(royalties[1].receiver).to.equal(await royaltyReceiver2.getAddress());
 			expect(royalties[1].feeNumerator).to.equal(3000);
+		});
+	});
+
+	describe('ERC721Enumerable Functionality', function () {
+		it('Should properly track token ownership with ERC721Enumerable', async function () {
+			// Mint multiple tokens
+			await kami721c.connect(user1).mint(); // Token ID 0
+			await kami721c.connect(user1).mint(); // Token ID 1
+			await kami721c.connect(user2).mint(); // Token ID 2
+
+			// Check total supply
+			expect(await kami721c.totalSupply()).to.equal(3);
+
+			// Check balance of each user
+			expect(await kami721c.balanceOf(await user1.getAddress())).to.equal(2);
+			expect(await kami721c.balanceOf(await user2.getAddress())).to.equal(1);
+
+			// Check tokenOfOwnerByIndex
+			expect(await kami721c.tokenOfOwnerByIndex(await user1.getAddress(), 0)).to.equal(0);
+			expect(await kami721c.tokenOfOwnerByIndex(await user1.getAddress(), 1)).to.equal(1);
+			expect(await kami721c.tokenOfOwnerByIndex(await user2.getAddress(), 0)).to.equal(2);
+
+			// Check tokenByIndex
+			expect(await kami721c.tokenByIndex(0)).to.equal(0);
+			expect(await kami721c.tokenByIndex(1)).to.equal(1);
+			expect(await kami721c.tokenByIndex(2)).to.equal(2);
+		});
+
+		it('Should update enumeration correctly after transfers', async function () {
+			// Mint tokens
+			await kami721c.connect(user1).mint(); // Token ID 0
+			await kami721c.connect(user1).mint(); // Token ID 1
+
+			// Transfer from user1 to user2
+			await kami721c.connect(user1).sellToken(await user2.getAddress(), 0, MINT_PRICE);
+
+			// Check updated balances
+			expect(await kami721c.balanceOf(await user1.getAddress())).to.equal(1);
+			expect(await kami721c.balanceOf(await user2.getAddress())).to.equal(1);
+
+			// Check tokenOfOwnerByIndex
+			expect(await kami721c.tokenOfOwnerByIndex(await user1.getAddress(), 0)).to.equal(1);
+			expect(await kami721c.tokenOfOwnerByIndex(await user2.getAddress(), 0)).to.equal(0);
 		});
 	});
 });
