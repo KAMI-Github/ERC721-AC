@@ -340,4 +340,218 @@ describe('KAMI721C with USDC Payments', function () {
 			expect(await kami721c.tokenOfOwnerByIndex(await user2.getAddress(), 0)).to.equal(0);
 		});
 	});
+
+	describe('Rental Functionality', function () {
+		beforeEach(async function () {
+			// Mint a token for user1
+			await kami721c.connect(user1).mint();
+		});
+
+		it('Should allow renting a token', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Record initial balances
+			const user1BalanceBefore = await usdc.balanceOf(await user1.getAddress());
+			const user2BalanceBefore = await usdc.balanceOf(await user2.getAddress());
+			const platformBalanceBefore = await usdc.balanceOf(await platformAddress.getAddress());
+			const contractBalanceBefore = await usdc.balanceOf(await kami721c.getAddress());
+
+			// Get current block timestamp
+			const latestBlock = await ethers.provider.getBlock('latest');
+			if (!latestBlock) throw new Error('Failed to get latest block');
+			const currentBlockTimestamp = latestBlock.timestamp;
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Verify rental information
+			const rentalInfo = await kami721c.getRentalInfo(0);
+			expect(rentalInfo.renter).to.equal(await user2.getAddress());
+			expect(rentalInfo.startTime).to.be.closeTo(currentBlockTimestamp, 5);
+			expect(rentalInfo.endTime).to.be.closeTo(currentBlockTimestamp + rentalDuration, 5);
+			expect(rentalInfo.rentalPrice).to.equal(rentalPrice);
+			expect(rentalInfo.active).to.be.true;
+
+			// Calculate expected distributions
+			const platformCommission = (rentalPrice * BigInt(PLATFORM_COMMISSION_PERCENTAGE)) / BigInt(10000);
+			const ownerShare = rentalPrice - platformCommission;
+
+			// Verify USDC transfers
+			expect(await usdc.balanceOf(await user1.getAddress())).to.equal(user1BalanceBefore + ownerShare);
+			expect(await usdc.balanceOf(await user2.getAddress())).to.equal(user2BalanceBefore - rentalPrice);
+			expect(await usdc.balanceOf(await platformAddress.getAddress())).to.equal(platformBalanceBefore + platformCommission);
+			expect(await usdc.balanceOf(await kami721c.getAddress())).to.equal(contractBalanceBefore);
+
+			// Verify RENTER_ROLE was granted
+			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await user2.getAddress())).to.be.true;
+		});
+
+		it('Should prevent renting an already rented token', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Try to rent the same token again
+			await expect(kami721c.connect(royaltyReceiver1).rentToken(0, rentalDuration, rentalPrice)).to.be.revertedWith(
+				'Token is already rented'
+			);
+		});
+
+		it('Should prevent the owner from renting their own token', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user1).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Try to rent the token
+			await expect(kami721c.connect(user1).rentToken(0, rentalDuration, rentalPrice)).to.be.revertedWith(
+				'Owner cannot rent their own token'
+			);
+		});
+
+		it('Should allow ending a rental early', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// End the rental
+			await kami721c.connect(user1).endRental(0);
+
+			// Verify rental is no longer active
+			const rentalInfo = await kami721c.getRentalInfo(0);
+			expect(rentalInfo.active).to.be.false;
+
+			// Verify RENTER_ROLE was revoked
+			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await user2.getAddress())).to.be.false;
+		});
+
+		it('Should allow extending a rental', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+			const additionalDuration = 43200; // 12 hours in seconds
+			const additionalPayment = parseUnits('0.25', 6); // 0.25 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice + additionalPayment);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Record initial balances
+			const user1BalanceBefore = await usdc.balanceOf(await user1.getAddress());
+			const user2BalanceBefore = await usdc.balanceOf(await user2.getAddress());
+			const platformBalanceBefore = await usdc.balanceOf(await platformAddress.getAddress());
+			const contractBalanceBefore = await usdc.balanceOf(await kami721c.getAddress());
+
+			// Get current block timestamp
+			const latestBlock = await ethers.provider.getBlock('latest');
+			if (!latestBlock) throw new Error('Failed to get latest block');
+			const currentBlockTimestamp = latestBlock.timestamp;
+
+			// Extend the rental
+			await kami721c.connect(user2).extendRental(0, additionalDuration, additionalPayment);
+
+			// Verify rental information
+			const rentalInfo = await kami721c.getRentalInfo(0);
+			expect(rentalInfo.endTime).to.be.closeTo(currentBlockTimestamp + rentalDuration + additionalDuration, 5);
+			expect(rentalInfo.rentalPrice).to.equal(rentalPrice + additionalPayment);
+			expect(rentalInfo.active).to.be.true;
+
+			// Calculate expected distributions
+			const platformCommission = (additionalPayment * BigInt(PLATFORM_COMMISSION_PERCENTAGE)) / BigInt(10000);
+			const ownerShare = additionalPayment - platformCommission;
+
+			// Verify USDC transfers
+			expect(await usdc.balanceOf(await user1.getAddress())).to.equal(user1BalanceBefore + ownerShare);
+			expect(await usdc.balanceOf(await user2.getAddress())).to.equal(user2BalanceBefore - additionalPayment);
+			expect(await usdc.balanceOf(await platformAddress.getAddress())).to.equal(platformBalanceBefore + platformCommission);
+			expect(await usdc.balanceOf(await kami721c.getAddress())).to.equal(contractBalanceBefore);
+		});
+
+		it('Should prevent transfers during rental period', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Try to transfer the token
+			await expect(
+				kami721c.connect(user1).transferFrom(await user1.getAddress(), await royaltyReceiver1.getAddress(), 0)
+			).to.be.revertedWith('Token is locked during rental period');
+		});
+
+		it('Should automatically end rental when the rental period expires', async function () {
+			const rentalDuration = 5; // 5 seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Wait for rental period to expire
+			await new Promise((resolve) => setTimeout(resolve, 6000));
+
+			// Try to transfer the token (should succeed as rental has expired)
+			await kami721c.connect(user1).transferFrom(await user1.getAddress(), await royaltyReceiver1.getAddress(), 0);
+
+			// Verify rental is no longer active
+			const rentalInfo = await kami721c.getRentalInfo(0);
+			expect(rentalInfo.active).to.be.false;
+
+			// Verify RENTER_ROLE was revoked
+			expect(await kami721c.hasRole(await kami721c.RENTER_ROLE(), await user2.getAddress())).to.be.false;
+		});
+
+		it('Should prevent selling a rented token', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+			const salePrice = parseUnits('10', 6); // 10 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Try to sell the token
+			await expect(kami721c.connect(user1).sellToken(await royaltyReceiver1.getAddress(), 0, salePrice)).to.be.revertedWith(
+				'Token is currently rented'
+			);
+		});
+
+		it('Should prevent burning a rented token', async function () {
+			const rentalDuration = 86400; // 1 day in seconds
+			const rentalPrice = parseUnits('0.5', 6); // 0.5 USDC
+
+			// Approve USDC for rental
+			await usdc.connect(user2).approve(await kami721c.getAddress(), rentalPrice);
+
+			// Rent the token
+			await kami721c.connect(user2).rentToken(0, rentalDuration, rentalPrice);
+
+			// Try to burn the token
+			await expect(kami721c.connect(user1).burn(0)).to.be.revertedWith('Cannot burn a rented token');
+		});
+	});
 });

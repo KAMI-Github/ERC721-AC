@@ -7,12 +7,13 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
 
 /**
  * @title KAMI721C
- * @dev An ERC721 implementation with USDC payments and programmable royalties for both minting and transfers
+ * @dev An ERC721 implementation with USDC payments, programmable royalties, and rental functionality
  */
-contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
+contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
     using SafeERC20 for IERC20;
     using Counters for Counters.Counter;
     
@@ -50,6 +51,18 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
     // Royalty percentage for transfers as percentage of sale price (in basis points, 10000 = 100%)
     uint96 public royaltyPercentage = 1000; // Default to 10%
     
+    // Rental functionality
+    struct Rental {
+        address renter;
+        uint256 startTime;
+        uint256 endTime;
+        uint256 rentalPrice;
+        bool active;
+    }
+    
+    // Mapping from token ID to rental information
+    mapping(uint256 => Rental) private _rentals;
+    
     // Events
     event MintRoyaltiesUpdated(RoyaltyData[] royalties);
     event TransferRoyaltiesUpdated(RoyaltyData[] royalties);
@@ -60,6 +73,9 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
     event RoyaltyPercentageUpdated(uint96 newPercentage);
     event PlatformCommissionUpdated(uint96 newPercentage, address newPlatformAddress);
     event TokenSold(uint256 indexed tokenId, address indexed from, address indexed to, uint256 salePrice);
+    event TokenRented(uint256 indexed tokenId, address indexed owner, address indexed renter, uint256 startTime, uint256 endTime, uint256 rentalPrice);
+    event RentalEnded(uint256 indexed tokenId, address indexed owner, address indexed renter);
+    event RentalExtended(uint256 indexed tokenId, address indexed renter, uint256 newEndTime);
     
     constructor(
         address usdcAddress_,
@@ -334,6 +350,7 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
     function sellToken(address to, uint256 tokenId, uint256 salePrice) external {
         address seller = ownerOf(tokenId);
         require(msg.sender == seller, "Only token owner can sell");
+        require(!_rentals[tokenId].active, "Token is currently rented");
         
         // Calculate royalty amount
         uint256 royaltyAmount = (salePrice * royaltyPercentage) / 10000;
@@ -380,6 +397,202 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
         emit TokenSold(tokenId, seller, to, salePrice);
     }
 
+    /**
+     * @dev Rent a token for a specified duration
+     * @param tokenId The token ID to rent
+     * @param duration The rental duration in seconds
+     * @param rentalPrice The rental price in USDC
+     */
+    function rentToken(uint256 tokenId, uint256 duration, uint256 rentalPrice) external {
+        require(_exists(tokenId), "Token does not exist");
+        require(!_rentals[tokenId].active, "Token is already rented");
+        require(duration > 0, "Rental duration must be greater than 0");
+        require(rentalPrice > 0, "Rental price must be greater than 0");
+        
+        address tokenOwner = ownerOf(tokenId);
+        require(tokenOwner != msg.sender, "Owner cannot rent their own token");
+        
+        // Calculate platform commission
+        uint256 platformCommission = (rentalPrice * platformCommissionPercentage) / 10000;
+        
+        // Calculate owner's share (rental price minus platform commission)
+        uint256 ownerShare = rentalPrice - platformCommission;
+        
+        // Transfer rental payment from renter to this contract
+        usdcToken.safeTransferFrom(msg.sender, address(this), rentalPrice);
+        
+        // Pay platform commission
+        if (platformCommission > 0) {
+            usdcToken.safeTransfer(platformAddress, platformCommission);
+            emit PlatformCommissionPaid(tokenId, platformAddress, platformCommission);
+        }
+        
+        // Pay owner's share
+        usdcToken.safeTransfer(tokenOwner, ownerShare);
+        
+        // Create rental record
+        _rentals[tokenId] = Rental({
+            renter: msg.sender,
+            startTime: block.timestamp,
+            endTime: block.timestamp + duration,
+            rentalPrice: rentalPrice,
+            active: true
+        });
+        
+        // Grant RENTER_ROLE to the renter
+        _grantRole(RENTER_ROLE, msg.sender);
+        
+        emit TokenRented(tokenId, tokenOwner, msg.sender, block.timestamp, block.timestamp + duration, rentalPrice);
+    }
+    
+    /**
+     * @dev End a rental early (can be called by either the owner or the renter)
+     * @param tokenId The token ID to end rental for
+     */
+    function endRental(uint256 tokenId) external {
+        require(_exists(tokenId), "Token does not exist");
+        require(_rentals[tokenId].active, "Token is not rented");
+        
+        address tokenOwner = ownerOf(tokenId);
+        require(msg.sender == tokenOwner || msg.sender == _rentals[tokenId].renter, "Only owner or renter can end rental");
+        
+        address renter = _rentals[tokenId].renter;
+        
+        // Mark rental as inactive
+        _rentals[tokenId].active = false;
+        
+        // Revoke RENTER_ROLE from the renter if they have no other active rentals
+        if (!hasActiveRentals(renter)) {
+            _revokeRole(RENTER_ROLE, renter);
+        }
+        
+        emit RentalEnded(tokenId, tokenOwner, renter);
+    }
+    
+    /**
+     * @dev Extend a rental period
+     * @param tokenId The token ID to extend rental for
+     * @param additionalDuration The additional duration in seconds
+     * @param additionalPayment The additional payment in USDC
+     */
+    function extendRental(uint256 tokenId, uint256 additionalDuration, uint256 additionalPayment) external {
+        require(_exists(tokenId), "Token does not exist");
+        require(_rentals[tokenId].active, "Token is not rented");
+        require(additionalDuration > 0, "Additional duration must be greater than 0");
+        require(additionalPayment > 0, "Additional payment must be greater than 0");
+        
+        address tokenOwner = ownerOf(tokenId);
+        require(msg.sender == _rentals[tokenId].renter, "Only renter can extend rental");
+        
+        // Calculate platform commission for the additional payment
+        uint256 platformCommission = (additionalPayment * platformCommissionPercentage) / 10000;
+        
+        // Calculate owner's share (additional payment minus platform commission)
+        uint256 ownerShare = additionalPayment - platformCommission;
+        
+        // Transfer additional payment from renter to this contract
+        usdcToken.safeTransferFrom(msg.sender, address(this), additionalPayment);
+        
+        // Pay platform commission
+        if (platformCommission > 0) {
+            usdcToken.safeTransfer(platformAddress, platformCommission);
+            emit PlatformCommissionPaid(tokenId, platformAddress, platformCommission);
+        }
+        
+        // Pay owner's share
+        usdcToken.safeTransfer(tokenOwner, ownerShare);
+        
+        // Update rental end time
+        _rentals[tokenId].endTime += additionalDuration;
+        _rentals[tokenId].rentalPrice += additionalPayment;
+        
+        emit RentalExtended(tokenId, msg.sender, _rentals[tokenId].endTime);
+    }
+    
+    /**
+     * @dev Check if a token is currently rented
+     * @param tokenId The token ID to check
+     * @return bool Whether the token is rented
+     */
+    function isRented(uint256 tokenId) external view returns (bool) {
+        return _rentals[tokenId].active;
+    }
+    
+    /**
+     * @dev Get rental information for a token
+     * @param tokenId The token ID to get rental info for
+     * @return renter The address of the renter
+     * @return startTime The rental start time
+     * @return endTime The rental end time
+     * @return rentalPrice The rental price
+     * @return active Whether the rental is active
+     */
+    function getRentalInfo(uint256 tokenId) external view returns (
+        address renter,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 rentalPrice,
+        bool active
+    ) {
+        Rental memory rental = _rentals[tokenId];
+        return (rental.renter, rental.startTime, rental.endTime, rental.rentalPrice, rental.active);
+    }
+    
+    /**
+     * @dev Check if a user has any active rentals
+     * @param user The user address to check
+     * @return bool Whether the user has active rentals
+     */
+    function hasActiveRentals(address user) public view returns (bool) {
+        for (uint256 i = 0; i < totalSupply(); i++) {
+            uint256 tokenId = tokenByIndex(i);
+            if (_rentals[tokenId].active && _rentals[tokenId].renter == user) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * @dev Override _beforeTokenTransfer to prevent transfers during rental
+     */
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 tokenId,
+        uint256 batchSize
+    ) internal virtual override {
+        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+        
+        // Allow minting and burning
+        if (from == address(0) || to == address(0)) {
+            return;
+        }
+        
+        // Check if token is rented
+        if (_rentals[tokenId].active) {
+            // Only allow transfers from the renter back to the owner
+            address tokenOwner = ownerOf(tokenId);
+            require(
+                (from == _rentals[tokenId].renter && to == tokenOwner) || 
+                (msg.sender == tokenOwner && block.timestamp >= _rentals[tokenId].endTime),
+                "Token is locked during rental period"
+            );
+            
+            // If rental period has ended, mark it as inactive
+            if (block.timestamp >= _rentals[tokenId].endTime) {
+                _rentals[tokenId].active = false;
+                
+                // Revoke RENTER_ROLE from the renter if they have no other active rentals
+                if (!hasActiveRentals(_rentals[tokenId].renter)) {
+                    _revokeRole(RENTER_ROLE, _rentals[tokenId].renter);
+                }
+                
+                emit RentalEnded(tokenId, tokenOwner, _rentals[tokenId].renter);
+            }
+        }
+    }
+
     function _baseURI() internal view virtual override returns (string memory) {
         return _baseTokenURI;
     }
@@ -391,6 +604,7 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
 
     function burn(uint256 tokenId) external {
         require(ownerOf(tokenId) == msg.sender, "Not token owner");
+        require(!_rentals[tokenId].active, "Cannot burn a rented token");
         _burn(tokenId);
     }
 
@@ -401,5 +615,21 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981 {
     function setMintPrice(uint256 newMintPrice) external {
         require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
         mintPrice = newMintPrice;
+    }
+    
+    /**
+     * @dev Pause the contract
+     */
+    function pause() external {
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
+        _pause();
+    }
+    
+    /**
+     * @dev Unpause the contract
+     */
+    function unpause() external {
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
+        _unpause();
     }
 } 

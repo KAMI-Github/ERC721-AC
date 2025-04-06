@@ -21,6 +21,9 @@ The `KAMI721C` contract is a modern implementation of an NFT collection that lev
 -   **ERC2981 Compatible**: Full support for on-chain royalty information
 -   **Flexible Transfers**: Manual royalty payments or automatic distribution during transfers
 -   **Secure Access Management**: Role-based permissions for administrative functions
+-   **NFT Rental System**: Built-in rental functionality with automatic expiration and transfer restrictions
+-   **Rental Extensions**: Support for extending rental periods with additional payments
+-   **Rental Protection**: Prevents token transfers, sales, and burns during active rental periods
 
 ## 📋 Prerequisites
 
@@ -200,8 +203,8 @@ Sets token-specific transfer royalties. Only callable by users with OWNER_ROLE.
 ```javascript
 // Example for token ID 0
 const royalties = [
-	{ receiver: address1, feeNumerator: 4000 }, // 40%
-	{ receiver: address2, feeNumerator: 6000 }, // 60%
+	{ receiver: address1, feeNumerator: 7000 }, // 70%
+	{ receiver: address2, feeNumerator: 3000 }, // 30%
 ];
 await nftContract.setTokenTransferRoyalties(0, royalties);
 ```
@@ -285,6 +288,89 @@ Returns royalty information according to ERC2981.
 ```javascript
 const [receiver, royaltyAmount] = await nftContract.royaltyInfo(tokenId, salePrice);
 ```
+
+## 🏠 Rental System
+
+The KAMI721C contract includes a comprehensive rental system that allows NFT owners to rent out their tokens while maintaining ownership and receiving rental payments.
+
+### Rental Functions
+
+#### `rentToken(uint256 tokenId, uint256 duration, uint256 rentalPrice)`
+
+Allows a user to rent a token for a specified duration by paying the rental price in USDC.
+
+```javascript
+// First approve USDC spending
+const rentalDuration = 86400; // 1 day in seconds
+const rentalPrice = ethers.parseUnits('0.5', 6); // 0.5 USDC
+await usdcContract.approve(nftContractAddress, rentalPrice);
+
+// Then rent the token
+await nftContract.rentToken(tokenId, rentalDuration, rentalPrice);
+```
+
+**Note**: The rental price is distributed between the token owner and the platform based on the platform commission percentage.
+
+#### `extendRental(uint256 tokenId, uint256 additionalDuration, uint256 additionalPayment)`
+
+Allows the current renter to extend their rental period by making an additional payment.
+
+```javascript
+// First approve USDC spending
+const additionalDuration = 43200; // 12 hours in seconds
+const additionalPayment = ethers.parseUnits('0.25', 6); // 0.25 USDC
+await usdcContract.approve(nftContractAddress, additionalPayment);
+
+// Then extend the rental
+await nftContract.extendRental(tokenId, additionalDuration, additionalPayment);
+```
+
+#### `endRental(uint256 tokenId)`
+
+Allows either the token owner or the renter to end a rental early.
+
+```javascript
+await nftContract.endRental(tokenId);
+```
+
+### Rental Information
+
+#### `isRented(uint256 tokenId)`
+
+Checks if a token is currently rented.
+
+```javascript
+const isRented = await nftContract.isRented(tokenId);
+```
+
+#### `getRentalInfo(uint256 tokenId)`
+
+Retrieves detailed information about a token's rental status.
+
+```javascript
+const { renter, startTime, endTime, rentalPrice, active } = await nftContract.getRentalInfo(tokenId);
+```
+
+### Rental Restrictions
+
+During an active rental period:
+
+-   The token cannot be transferred by the owner
+-   The token cannot be sold using the `sellToken` function
+-   The token cannot be burned
+-   Only the renter can extend the rental period
+-   The rental can be ended early by either the owner or renter
+-   The rental automatically expires after the rental period, allowing the owner to transfer the token again
+
+### Rental Events
+
+The contract emits the following events related to rentals:
+
+-   `TokenRented(uint256 tokenId, address owner, address renter, uint256 startTime, uint256 endTime, uint256 rentalPrice)`
+-   `RentalEnded(uint256 tokenId, address owner, address renter)`
+-   `RentalExtended(uint256 tokenId, address renter, uint256 newEndTime)`
+
+These events can be used to track rental activity and update off-chain systems.
 
 ## 🧪 Testing
 
