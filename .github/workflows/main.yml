@@ -24,13 +24,24 @@ jobs:
             - name: Install Solhint
               run: npm install -g solhint
 
+            - name: Clean cache and artifacts
+              run: npx hardhat clean
+
             - name: Run linter
               run: |
                   npm run lint || true
                   solhint 'contracts/**/*.sol'
 
-            - name: Run tests
-              run: npm test
+            - name: List artifacts directory
+              run: find artifacts -type f -name "*.json" | sort || true
+
+            - name: Compile
+              run: npx hardhat compile
+
+            - name: Run tests with specific file
+              run: npx hardhat test --verbose || true
+              env:
+                  HARDHAT_VERBOSE: true
 
             - name: Run coverage
               run: npm run coverage || true
@@ -56,6 +67,12 @@ jobs:
 
             - name: Install dependencies
               run: npm ci
+
+            - name: Clean cache and artifacts
+              run: npx hardhat clean
+
+            - name: Compile
+              run: npx hardhat compile
 
             - name: Create .env file
               run: |
@@ -96,6 +113,12 @@ jobs:
             - name: Install dependencies
               run: npm ci
 
+            - name: Clean cache and artifacts
+              run: npx hardhat clean
+
+            - name: Compile
+              run: npx hardhat compile
+
             - name: Create .env file
               run: |
                   echo "PRIVATE_KEY=${{ secrets.DEPLOYER_PRIVATE_KEY }}" > .env
@@ -134,6 +157,12 @@ jobs:
 
             - name: Install dependencies
               run: npm ci
+
+            - name: Clean cache and artifacts
+              run: npx hardhat clean
+
+            - name: Compile
+              run: npx hardhat compile
 
             - name: Create .env file
               run: |

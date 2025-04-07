@@ -31,7 +31,7 @@ describe('KAMI721C with USDC Payments', function () {
 		[owner, user1, user2, platformAddress, royaltyReceiver1, royaltyReceiver2, royaltyReceiver3] = await ethers.getSigners();
 
 		// Deploy mock USDC token
-		const MockERC20 = await ethers.getContractFactory('MockERC20');
+		const MockERC20 = await ethers.getContractFactory('contracts/MockERC20.sol:MockERC20');
 		usdc = await MockERC20.deploy('USD Coin', 'USDC', 6);
 		await usdc.waitForDeployment();
 
