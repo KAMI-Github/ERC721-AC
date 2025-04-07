@@ -1,398 +1,196 @@
-# 🎮 KAMI721-C Smart Contract Documentation
+# KAMI721C - Upgradeable ERC721 NFT Contract
 
-<div align="center">
-  <img src="https://img.shields.io/badge/Solidity-^0.8.24-red.svg" alt="Solidity Version">
-  <img src="https://img.shields.io/badge/ERC721C-Compliant-blue.svg" alt="ERC721C Compliant">
-  <img src="https://img.shields.io/badge/ERC2981-Royalties-green.svg" alt="ERC2981 Royalties">
-  <img src="https://img.shields.io/badge/AccessControl-Role_Based-purple.svg" alt="Role-Based Access Control">
-</div>
+KAMI721C is an advanced ERC721 NFT contract with programmable royalties, rental functionality, and USDC payment integration. This repository contains both the standard implementation and an upgradeable version using OpenZeppelin's transparent proxy pattern.
 
-## 📑 Overview
+## Features
 
-The `KAMI721C` contract is a modern implementation of an NFT collection that leverages USDC for payments and includes advanced royalty distribution capabilities. Built on ERC721C with support for multiple royalty receivers for both minting and transfers, it provides a flexible solution for game asset tokenization with role-based access control.
+-   **ERC721 Standard**: Implements the ERC721 standard for non-fungible tokens
+-   **Programmable Royalties**: Configurable royalty distribution for both minting and transfers
+-   **Rental System**: Built-in functionality for renting NFTs with time-based access control
+-   **USDC Payments**: Integration with USDC for minting, selling, and rental payments
+-   **Platform Commission**: Configurable platform fee for all transactions
+-   **Role-Based Access Control**: Secure permission system for different contract functions
+-   **Upgradeable Architecture**: Transparent proxy pattern for future upgrades
 
-## 🔧 Features
+## Contract Architecture
 
--   **Role-Based Access Control**: Utilizes OpenZeppelin's AccessControl for flexible permission management
--   **Multiple Roles**: Includes OWNER_ROLE, RENTER_ROLE, and PLATFORM_ROLE for granular access control
--   **USDC Payments**: All transactions use USDC instead of native ETH
--   **Multiple Royalty Receivers**: Supports multiple royalty recipients for both minting and transfers
--   **Token-Specific Royalties**: Set different royalty structures per token
--   **ERC2981 Compatible**: Full support for on-chain royalty information
--   **Flexible Transfers**: Manual royalty payments or automatic distribution during transfers
--   **Secure Access Management**: Role-based permissions for administrative functions
--   **NFT Rental System**: Built-in rental functionality with automatic expiration and transfer restrictions
--   **Rental Extensions**: Support for extending rental periods with additional payments
--   **Rental Protection**: Prevents token transfers, sales, and burns during active rental periods
+### KAMI721C (Standard Version)
 
-## 📋 Prerequisites
+The standard KAMI721C contract is a non-upgradeable ERC721 implementation with the following key components:
 
--   [Node.js](https://nodejs.org/) and npm/yarn installed
--   Access to an RPC provider for deployment (Infura, Alchemy, etc.)
--   USDC contract address on your target network
+-   **Access Control**: Uses OpenZeppelin's AccessControl for role-based permissions
+-   **ERC2981**: Implements the ERC2981 standard for royalty information
+-   **ERC721Enumerable**: Extends ERC721 with enumeration capabilities
+-   **Pausable**: Allows pausing of contract operations in emergencies
 
-## 🚀 Deployment Instructions
+### KAMI721CUpgradeable
 
-### 1. Clone the repository
+The upgradeable version consists of three main contracts:
 
-```shell
-git clone <repository-url>
-cd <repository-directory>
-```
+1. **KAMI721CUpgradeable.sol**: The implementation contract with UUPS upgradeability
+2. **KAMIProxyAdmin.sol**: The admin contract for managing the proxy
+3. **KAMITransparentUpgradeableProxy.sol**: The actual proxy contract
 
-### 2. Install dependencies
+## Installation
 
-```shell
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/KAMI721C.git
+cd KAMI721C
+
+# Install dependencies
 npm install
 ```
 
-### 3. Configure the deployment
+## Deployment
 
-Create or modify the `.env` file with the necessary configuration:
+### Standard Contract
 
-```
-# Network RPC URLs
-MAINNET_RPC_URL=https://eth-mainnet.alchemyapi.io/v2/your-api-key
-GOERLI_RPC_URL=https://eth-goerli.alchemyapi.io/v2/your-api-key
-SEPOLIA_RPC_URL=https://eth-sepolia.alchemyapi.io/v2/your-api-key
-POLYGON_RPC_URL=https://polygon-mainnet.alchemyapi.io/v2/your-api-key
-MUMBAI_RPC_URL=https://polygon-mumbai.alchemyapi.io/v2/your-api-key
-
-# Private key for deployment
-PRIVATE_KEY=your-private-key
-
-# Contract configuration
-NFT_NAME="KAMI NFT Collection"
-NFT_SYMBOL="KAMI"
-BASE_URI="https://your-metadata-api.com/tokens/"
-SECURITY_LEVEL=1
-
-# API keys for verification
-ETHERSCAN_API_KEY=your-etherscan-api-key
-POLYGONSCAN_API_KEY=your-polygonscan-api-key
+```bash
+npx hardhat run scripts/deploy.ts --network <network-name>
 ```
 
-### 4. Deploy to your chosen network
+### Upgradeable Contract
 
-```shell
-# Local development
-npm run deploy:local
-
-# Test networks
-npm run deploy:goerli
-npm run deploy:sepolia
-npm run deploy:mumbai
-
-# Production networks
-npm run deploy:polygon
-npm run deploy:mainnet
+```bash
+npx hardhat run scripts/deploy_upgradeable.ts --network <network-name>
 ```
 
-## 🔐 Role-Based Access Control
+## Usage Examples
 
-The contract implements OpenZeppelin's AccessControl pattern with the following roles:
-
-### Available Roles
-
--   **OWNER_ROLE**: Administrative role with permissions to manage contract settings, royalties, and platform commissions
--   **RENTER_ROLE**: Role designed for users who can rent or temporarily use NFTs
--   **PLATFORM_ROLE**: Special role for the platform address that receives commission fees
-
-### Role Management
-
-#### `grantRole(bytes32 role, address account)`
-
-Grants a role to an account. Can only be called by accounts with the DEFAULT_ADMIN_ROLE.
+### Initializing the Contract
 
 ```javascript
-// Example to grant RENTER_ROLE to an address using ethers.js
-const roleHash = ethers.keccak256(ethers.toUtf8Bytes('RENTER_ROLE'));
-await nftContract.grantRole(roleHash, accountAddress);
+// Deploy the contract
+const KAMI721C = await ethers.getContractFactory('KAMI721C');
+const kami = await KAMI721C.deploy(
+	usdcAddress,
+	'KAMI NFT',
+	'KAMI',
+	'https://api.kami.example/metadata/',
+	ethers.parseUnits('100', 6), // 100 USDC mint price
+	platformAddress,
+	500 // 5% platform commission
+);
+await kami.deployed();
 ```
 
-#### `revokeRole(bytes32 role, address account)`
-
-Revokes a role from an account. Can only be called by accounts with the DEFAULT_ADMIN_ROLE.
+### Setting Royalties
 
 ```javascript
-// Example to revoke RENTER_ROLE from an address using ethers.js
-const roleHash = ethers.keccak256(ethers.toUtf8Bytes('RENTER_ROLE'));
-await nftContract.revokeRole(roleHash, accountAddress);
+// Set mint royalties
+const mintRoyalties = [
+	{
+		receiver: creatorAddress,
+		feeNumerator: 9500, // 95% of royalties
+	},
+];
+await kami.setMintRoyalties(mintRoyalties);
+
+// Set transfer royalties
+const transferRoyalties = [
+	{
+		receiver: creatorAddress,
+		feeNumerator: 10000, // 100% of royalties
+	},
+];
+await kami.setTransferRoyalties(transferRoyalties);
 ```
 
-#### `hasRole(bytes32 role, address account)`
-
-Checks if an account has a specific role.
+### Minting NFTs
 
 ```javascript
-// Example to check if an address has OWNER_ROLE using ethers.js
-const roleHash = ethers.keccak256(ethers.toUtf8Bytes('OWNER_ROLE'));
-const hasRole = await nftContract.hasRole(roleHash, accountAddress);
+// Approve USDC spending
+await usdc.approve(kami.address, ethers.parseUnits('100', 6));
+
+// Mint an NFT
+await kami.mint();
 ```
 
-## 📝 External Methods Guide
+### Selling NFTs
+
+```javascript
+// Approve the contract to transfer the token
+await kami.approve(kami.address, tokenId);
+
+// Sell the token
+const salePrice = ethers.parseUnits('200', 6);
+await kami.sellToken(buyerAddress, tokenId, salePrice);
+```
+
+### Renting NFTs
+
+```javascript
+// Rent a token
+const rentalDuration = 86400; // 1 day in seconds
+const rentalPrice = ethers.parseUnits('50', 6);
+await kami.rentToken(tokenId, rentalDuration, rentalPrice);
+
+// End a rental
+await kami.endRental(tokenId);
+
+// Extend a rental
+const additionalDuration = 43200; // 12 hours
+const additionalPayment = ethers.parseUnits('25', 6);
+await kami.extendRental(tokenId, additionalDuration, additionalPayment);
+```
+
+### Upgrading the Contract
+
+```javascript
+// Deploy a new implementation
+const KAMI721CUpgradeableV2 = await ethers.getContractFactory('KAMI721CUpgradeableV2');
+await upgrades.upgradeProxy(proxyAddress, KAMI721CUpgradeableV2);
+```
+
+## Testing
+
+Run the test suite:
+
+```bash
+npx hardhat test
+```
+
+## Contract Functions
 
 ### Core Functions
 
-#### `mint()`
-
-Allows users to mint a new NFT by paying the fixed USDC mint price.
-
-```javascript
-// First approve USDC spending
-await usdcContract.approve(nftContractAddress, mintPrice);
-// Then mint the NFT
-await nftContract.mint();
-```
-
-**Note**: Users must first approve the contract to spend their USDC.
-
-#### `burn(uint256 tokenId)`
-
-Allows the token owner to burn their NFT.
-
-```javascript
-await nftContract.burn(tokenId);
-```
+-   `mint()`: Mint a new NFT by paying the mint price in USDC
+-   `sellToken(address to, uint256 tokenId, uint256 salePrice)`: Sell an NFT with royalty distribution
+-   `rentToken(uint256 tokenId, uint256 duration, uint256 rentalPrice)`: Rent an NFT for a specified duration
+-   `endRental(uint256 tokenId)`: End a rental early
+-   `extendRental(uint256 tokenId, uint256 additionalDuration, uint256 additionalPayment)`: Extend a rental period
 
 ### Royalty Management
 
-#### `setMintRoyalties(RoyaltyData[] calldata royalties)`
+-   `setMintRoyalties(RoyaltyData[] calldata royalties)`: Set default royalties for minting
+-   `setTransferRoyalties(RoyaltyData[] calldata royalties)`: Set default royalties for transfers
+-   `setTokenMintRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`: Set token-specific mint royalties
+-   `setTokenTransferRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`: Set token-specific transfer royalties
+-   `getMintRoyaltyReceivers(uint256 tokenId)`: Get mint royalty receivers for a token
+-   `getTransferRoyaltyReceivers(uint256 tokenId)`: Get transfer royalty receivers for a token
 
-Sets global royalties distributed during minting. Only callable by users with OWNER_ROLE.
+### Configuration
 
-```javascript
-// Example to set 5% royalty to address1 and 3% to address2
-const royalties = [
-	{ receiver: address1, feeNumerator: 500 }, // 5%
-	{ receiver: address2, feeNumerator: 300 }, // 3%
-];
-await nftContract.setMintRoyalties(royalties);
-```
+-   `setMintPrice(uint256 newMintPrice)`: Set the mint price
+-   `setPlatformCommission(uint96 newPlatformCommissionPercentage, address newPlatformAddress)`: Set platform commission
+-   `setRoyaltyPercentage(uint96 newRoyaltyPercentage)`: Set the royalty percentage for transfers
+-   `setBaseURI(string memory baseURI)`: Set the base URI for token metadata
 
-#### `setTransferRoyalties(RoyaltyData[] calldata royalties)`
+### Administrative
 
-Sets global royalties for token transfers. Only callable by users with OWNER_ROLE.
+-   `pause()`: Pause the contract
+-   `unpause()`: Unpause the contract
+-   `burn(uint256 tokenId)`: Burn an NFT
 
-```javascript
-// Example to set transfer royalties that total to 100%
-const royalties = [
-	{ receiver: address1, feeNumerator: 7000 }, // 70%
-	{ receiver: address2, feeNumerator: 3000 }, // 30%
-];
-await nftContract.setTransferRoyalties(royalties);
-```
+## Roles
 
-#### `setTokenMintRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`
+-   `DEFAULT_ADMIN_ROLE`: Can manage all roles
+-   `OWNER_ROLE`: Can configure the contract and manage royalties
+-   `PLATFORM_ROLE`: Receives platform commission
+-   `RENTER_ROLE`: Granted to users who rent NFTs
+-   `UPGRADER_ROLE`: Can upgrade the implementation (upgradeable version only)
 
-Sets token-specific mint royalties. Only callable by users with OWNER_ROLE.
+## License
 
-```javascript
-// Example for token ID 0
-const royalties = [
-	{ receiver: address1, feeNumerator: 400 }, // 4%
-	{ receiver: address2, feeNumerator: 200 }, // 2%
-];
-await nftContract.setTokenMintRoyalties(0, royalties);
-```
-
-#### `setTokenTransferRoyalties(uint256 tokenId, RoyaltyData[] calldata royalties)`
-
-Sets token-specific transfer royalties. Only callable by users with OWNER_ROLE.
-
-```javascript
-// Example for token ID 0
-const royalties = [
-	{ receiver: address1, feeNumerator: 7000 }, // 70%
-	{ receiver: address2, feeNumerator: 3000 }, // 30%
-];
-await nftContract.setTokenTransferRoyalties(0, royalties);
-```
-
-### Transfer Functions
-
-#### `sellToken(address to, uint256 tokenId, uint256 salePrice)`
-
-Allows the token owner to sell the token directly through the contract, handling all royalty and fee payments automatically.
-
-```javascript
-// First, buyer needs to approve USDC spending
-await usdcContract.connect(buyerSigner).approve(nftContractAddress, salePrice);
-// Then seller initiates the sale
-await nftContract.connect(sellerSigner).sellToken(buyerAddress, tokenId, salePrice);
-```
-
-### Administrative Functions
-
-#### `setBaseURI(string memory baseURI)`
-
-Updates the base URI for token metadata. Only callable by users with OWNER_ROLE.
-
-```javascript
-await nftContract.setBaseURI('https://new-metadata-api.com/tokens/');
-```
-
-#### `setPlatformCommission(uint96 newPlatformCommissionPercentage, address newPlatformAddress)`
-
-Updates the platform commission percentage and platform address. Only callable by users with OWNER_ROLE.
-
-```javascript
-// Set 8% commission and update platform address
-await nftContract.setPlatformCommission(800, newPlatformAddress);
-```
-
-#### `setSecurityPolicy(uint8 securityLevel, uint32 operatorWhitelistId, uint32 permittedContractReceiversAllowlistId)`
-
-Sets the security policy for the ERC721C implementation. Only callable by users with OWNER_ROLE.
-
-```javascript
-// Set security policy
-await nftContract.setSecurityPolicy(
-	2, // Security level
-	1, // Operator whitelist ID
-	1 // Permitted contract receivers allowlist ID
-);
-```
-
-### View Functions
-
-#### `hasRole(bytes32 role, address account)`
-
-Checks if an account has a specific role.
-
-```javascript
-const roleHash = ethers.keccak256(ethers.toUtf8Bytes('OWNER_ROLE'));
-const hasRole = await nftContract.hasRole(roleHash, accountAddress);
-```
-
-#### `getMintRoyaltyReceivers(uint256 tokenId)`
-
-Returns all mint royalty receivers for a given token.
-
-```javascript
-const mintRoyaltyReceivers = await nftContract.getMintRoyaltyReceivers(tokenId);
-```
-
-#### `getTransferRoyaltyReceivers(uint256 tokenId)`
-
-Returns all transfer royalty receivers for a given token.
-
-```javascript
-const transferRoyaltyReceivers = await nftContract.getTransferRoyaltyReceivers(tokenId);
-```
-
-#### `royaltyInfo(uint256 tokenId, uint256 salePrice)`
-
-Returns royalty information according to ERC2981.
-
-```javascript
-const [receiver, royaltyAmount] = await nftContract.royaltyInfo(tokenId, salePrice);
-```
-
-## 🏠 Rental System
-
-The KAMI721C contract includes a comprehensive rental system that allows NFT owners to rent out their tokens while maintaining ownership and receiving rental payments.
-
-### Rental Functions
-
-#### `rentToken(uint256 tokenId, uint256 duration, uint256 rentalPrice)`
-
-Allows a user to rent a token for a specified duration by paying the rental price in USDC.
-
-```javascript
-// First approve USDC spending
-const rentalDuration = 86400; // 1 day in seconds
-const rentalPrice = ethers.parseUnits('0.5', 6); // 0.5 USDC
-await usdcContract.approve(nftContractAddress, rentalPrice);
-
-// Then rent the token
-await nftContract.rentToken(tokenId, rentalDuration, rentalPrice);
-```
-
-**Note**: The rental price is distributed between the token owner and the platform based on the platform commission percentage.
-
-#### `extendRental(uint256 tokenId, uint256 additionalDuration, uint256 additionalPayment)`
-
-Allows the current renter to extend their rental period by making an additional payment.
-
-```javascript
-// First approve USDC spending
-const additionalDuration = 43200; // 12 hours in seconds
-const additionalPayment = ethers.parseUnits('0.25', 6); // 0.25 USDC
-await usdcContract.approve(nftContractAddress, additionalPayment);
-
-// Then extend the rental
-await nftContract.extendRental(tokenId, additionalDuration, additionalPayment);
-```
-
-#### `endRental(uint256 tokenId)`
-
-Allows either the token owner or the renter to end a rental early.
-
-```javascript
-await nftContract.endRental(tokenId);
-```
-
-### Rental Information
-
-#### `isRented(uint256 tokenId)`
-
-Checks if a token is currently rented.
-
-```javascript
-const isRented = await nftContract.isRented(tokenId);
-```
-
-#### `getRentalInfo(uint256 tokenId)`
-
-Retrieves detailed information about a token's rental status.
-
-```javascript
-const { renter, startTime, endTime, rentalPrice, active } = await nftContract.getRentalInfo(tokenId);
-```
-
-### Rental Restrictions
-
-During an active rental period:
-
--   The token cannot be transferred by the owner
--   The token cannot be sold using the `sellToken` function
--   The token cannot be burned
--   Only the renter can extend the rental period
--   The rental can be ended early by either the owner or renter
--   The rental automatically expires after the rental period, allowing the owner to transfer the token again
-
-### Rental Events
-
-The contract emits the following events related to rentals:
-
--   `TokenRented(uint256 tokenId, address owner, address renter, uint256 startTime, uint256 endTime, uint256 rentalPrice)`
--   `RentalEnded(uint256 tokenId, address owner, address renter)`
--   `RentalExtended(uint256 tokenId, address renter, uint256 newEndTime)`
-
-These events can be used to track rental activity and update off-chain systems.
-
-## 🧪 Testing
-
-Run the test suite to verify the contract's functionality:
-
-```shell
-# Run all tests
-npm test
-
-# Run specific KAMI721C tests
-npm run test:kami
-```
-
-## ⚠️ Important Notes
-
--   The maximum total royalty for any operation is 25%.
--   USDC tokens must be approved before minting or paying royalties.
--   The contract uses USDC with 6 decimals. Adjust values accordingly if using a different token.
--   This contract inherits from ERC721C, which includes additional transfer security mechanics.
--   Role management is controlled by accounts with the DEFAULT_ADMIN_ROLE.
--   When deploying, the deployer automatically receives the OWNER_ROLE and DEFAULT_ADMIN_ROLE.
-
-## 📜 License
-
-This project is licensed under the MIT License.
+MIT
