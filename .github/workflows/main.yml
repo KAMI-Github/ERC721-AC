@@ -11,6 +11,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
+              with:
+                  submodules: recursive
 
             - name: Setup Node.js
               uses: actions/setup-node@v3
@@ -32,14 +34,11 @@ jobs:
                   npm run lint || true
                   solhint 'contracts/**/*.sol'
 
-            - name: List artifacts directory
-              run: find artifacts -type f -name "*.json" | sort || true
-
-            - name: Compile
+            - name: Compile contracts
               run: npx hardhat compile
 
-            - name: Run tests with specific file
-              run: npx hardhat test --verbose || true
+            - name: Run Hardhat tests
+              run: npx hardhat test --verbose
               env:
                   HARDHAT_VERBOSE: true
 
@@ -58,6 +57,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
+              with:
+                  submodules: recursive
 
             - name: Setup Node.js
               uses: actions/setup-node@v3
@@ -71,7 +72,7 @@ jobs:
             - name: Clean cache and artifacts
               run: npx hardhat clean
 
-            - name: Compile
+            - name: Compile contracts
               run: npx hardhat compile
 
             - name: Create .env file
@@ -103,6 +104,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
+              with:
+                  submodules: recursive
 
             - name: Setup Node.js
               uses: actions/setup-node@v3
@@ -116,7 +119,7 @@ jobs:
             - name: Clean cache and artifacts
               run: npx hardhat clean
 
-            - name: Compile
+            - name: Compile contracts
               run: npx hardhat compile
 
             - name: Create .env file
@@ -148,6 +151,8 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v3
+              with:
+                  submodules: recursive
 
             - name: Setup Node.js
               uses: actions/setup-node@v3
@@ -161,7 +166,7 @@ jobs:
             - name: Clean cache and artifacts
               run: npx hardhat clean
 
-            - name: Compile
+            - name: Compile contracts
               run: npx hardhat compile
 
             - name: Create .env file
