@@ -13,6 +13,16 @@ KAMI721AC is an advanced ERC721A NFT contract supporting batch minting (claiming
 -   **Role-Based Access Control**: Secure permission system for different contract functions.
 -   **Upgradeable Architecture**: Transparent proxy pattern for future upgrades (optional).
 
+## Supported Interfaces (ERC165)
+
+The contract explicitly supports the following interfaces via `supportsInterface`:
+
+-   `IERC165` (0x01ffc9a7)
+-   `IERC721` (0x80ac58cd)
+-   `IERC721Metadata` (0x5b5e139f)
+-   `IAccessControl` (0x7965db0b)
+-   `IERC2981` (0x2a55205a)
+
 ## Contract Architecture
 
 ### KAMI721AC (Standard Version)
@@ -176,7 +186,6 @@ npm run test:upgradeable
 
 ### Configuration
 
--   `setMintPrice(uint256 newMintPrice)`: Set the mint price per token.
 -   `setPlatformCommission(uint96 newPlatformCommissionPercentage, address newPlatformAddress)`: Set platform commission details.
 -   `setRoyaltyPercentage(uint96 newRoyaltyPercentage)`: Set the _total_ royalty percentage for transfers (relative to sale price).
 -   `setBaseURI(string memory baseURI)`: Set the base URI for token metadata.
@@ -186,7 +195,7 @@ npm run test:upgradeable
 
 -   `pause()`: Pause the contract (requires admin role).
 -   `unpause()`: Unpause the contract (requires admin role).
--   `burn(uint256 tokenId)`: Burn an NFT (standard ERC721A burn, may be restricted or removed based on exact `ERC721A` version/config). Transfer restrictions apply if rented.
+-   `burn(uint256 tokenId)`: Burn an NFT (Inherited standard ERC721A burn, may be restricted or removed based on exact `ERC721A` version/config). Transfer restrictions apply if rented.
 -   `upgradeTo(address newImplementation)` (UUPS - called via ProxyAdmin): Upgrades the contract implementation (upgradeable version only).
 
 ## Roles
@@ -196,6 +205,10 @@ npm run test:upgradeable
 -   `PLATFORM_ROLE`: Receives platform commission.
 -   `RENTER_ROLE`: Granted to users who actively rent NFTs.
 -   `UPGRADER_ROLE` (Upgradeable only): Can upgrade the implementation via UUPS (if granted separately from admin).
+
+## Considerations
+
+-   **Contract Size**: Due to the combination of features (ERC721A, AccessControl, ERC2981, Rentals, Pausable, USDC integration), the compiled contract size may exceed the 24KB limit recommended for deployment on some networks. This can lead to increased deployment costs or potential issues. Consider splitting functionality or optimizing further if size becomes a critical issue.
 
 ## License
 
