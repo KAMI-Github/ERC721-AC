@@ -5,10 +5,10 @@ async function main() {
 	console.log('Deploying contracts with the account:', deployer.address);
 
 	// Deploy the implementation contract first
-	const KAMI721CUpgradeable = await ethers.getContractFactory('KAMI721CUpgradeable');
-	const implementation = await KAMI721CUpgradeable.deploy();
+	const KAMI721ACUpgradeable = await ethers.getContractFactory('KAMI721ACUpgradeable');
+	const implementation = await KAMI721ACUpgradeable.deploy();
 	await implementation.waitForDeployment();
-	console.log('KAMI721CUpgradeable implementation deployed to:', await implementation.getAddress());
+	console.log('KAMI721ACUpgradeable implementation deployed to:', await implementation.getAddress());
 
 	// Deploy the proxy admin
 	const KAMIProxyAdmin = await ethers.getContractFactory('KAMIProxyAdmin');
@@ -28,7 +28,7 @@ async function main() {
 
 	// Encode the initialize function call
 	const abiCoder = new ethers.AbiCoder();
-	const initializeData = KAMI721CUpgradeable.interface.encodeFunctionData('initialize', [
+	const initializeData = KAMI721ACUpgradeable.interface.encodeFunctionData('initialize', [
 		usdcAddress,
 		name,
 		symbol,
@@ -49,7 +49,7 @@ async function main() {
 	console.log('KAMITransparentUpgradeableProxy deployed to:', await proxy.getAddress());
 
 	console.log('Proxy deployment completed. The contract is now upgradeable.');
-	console.log('To interact with the contract, use the proxy address with the KAMI721CUpgradeable ABI.');
+	console.log('To interact with the contract, use the proxy address with the KAMI721ACUpgradeable ABI.');
 }
 
 main().catch((error) => {

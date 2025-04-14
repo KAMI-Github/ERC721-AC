@@ -6,7 +6,8 @@
 		"clean": "hardhat clean",
 		"compile": "hardhat compile",
 		"test": "hardhat test",
-		"test:kami": "hardhat test test/KAMI721C.test.ts",
+		"test:kami": "hardhat test test/KAMI721AC.test.ts",
+		"test:upgradeable": "hardhat test test/KAMI721ACUpgradeable.test.ts",
 		"coverage": "hardhat coverage",
 		"lint": "solhint 'contracts/**/*.sol' && eslint . --ext .ts",
 		"lint:fix": "solhint 'contracts/**/*.sol' --fix && eslint . --ext .ts --fix",
@@ -43,6 +44,8 @@
 		"@openzeppelin/contracts": "4.9.3",
 		"@openzeppelin/contracts-upgradeable": "^4.9.3",
 		"@openzeppelin/hardhat-upgrades": "^3.9.0",
-		"dotenv": "^16.3.1"
+		"dotenv": "^16.3.1",
+		"erc721a": "^4.3.0",
+		"erc721a-upgradeable": "^4.3.0"
 	}
 }

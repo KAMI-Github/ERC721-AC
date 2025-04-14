@@ -49,36 +49,36 @@ async function main() {
 	const validatorAddress = await validator.getAddress();
 	console.log('CreatorTokenTransferValidator deployed to:', validatorAddress);
 
-	// Deploy KAMI721C
-	console.log(`Deploying KAMI721C with USDC address: ${usdcAddress}...`);
-	const KAMI721C = await ethers.getContractFactory('KAMI721C');
-	const kami721c = await KAMI721C.deploy(usdcAddress, nftName, nftSymbol, baseUri);
-	await kami721c.waitForDeployment();
-	const kami721cAddress = await kami721c.getAddress();
-	console.log('KAMI721C deployed to:', kami721cAddress);
+	// Deploy KAMI721AC
+	console.log(`Deploying KAMI721AC with USDC address: ${usdcAddress}...`);
+	const KAMI721AC = await ethers.getContractFactory('KAMI721AC');
+	const kami721ac = await KAMI721AC.deploy(usdcAddress, nftName, nftSymbol, baseUri);
+	await kami721ac.waitForDeployment();
+	const kami721acAddress = await kami721ac.getAddress();
+	console.log('KAMI721AC deployed to:', kami721acAddress);
 
-	// Configure the KAMI721C contract with the transfer validator
-	console.log('Setting up transfer validator for KAMI721C...');
-	const setValidatorTx = await kami721c.setTransferValidator(validatorAddress);
+	// Configure the KAMI721AC contract with the transfer validator
+	console.log('Setting up transfer validator for KAMI721AC...');
+	const setValidatorTx = await kami721ac.setTransferValidator(validatorAddress);
 	await setValidatorTx.wait();
-	console.log('Transfer validator set for KAMI721C');
+	console.log('Transfer validator set for KAMI721AC');
 
-	// Configure security policy for the KAMI721C contract
-	console.log(`Setting security policy (level ${securityLevel}) for KAMI721C...`);
+	// Configure security policy for the KAMI721AC contract
+	console.log(`Setting security policy (level ${securityLevel}) for KAMI721AC...`);
 	const setSecurityPolicyTx = await validator.setCollectionSecurityPolicy(
-		kami721cAddress,
+		kami721acAddress,
 		securityLevel,
 		0, // Default operator whitelist ID
 		0 // Default contract receivers allowlist ID
 	);
 	await setSecurityPolicyTx.wait();
-	console.log('Security policy set for KAMI721C');
+	console.log('Security policy set for KAMI721AC');
 
 	console.log('Deployment completed successfully!');
 	console.log('-----------------------------------');
 	console.log('Summary:');
 	console.log(`CreatorTokenTransferValidator: ${validatorAddress}`);
-	console.log(`KAMI721C: ${kami721cAddress}`);
+	console.log(`KAMI721AC: ${kami721acAddress}`);
 	console.log(`USDC: ${usdcAddress}`);
 	console.log('-----------------------------------');
 }

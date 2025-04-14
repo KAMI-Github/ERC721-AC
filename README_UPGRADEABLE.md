@@ -1,10 +1,10 @@
-# KAMI721C Upgradeable Contract
+# KAMI721AC Upgradeable Contract
 
-This document explains how the KAMI721C contract has been made upgradeable using the transparent proxy pattern.
+This document explains how the KAMI721AC contract has been made upgradeable using the transparent proxy pattern.
 
 ## Overview
 
-The KAMI721C contract has been modified to support upgrades through the transparent proxy pattern. This allows the contract's logic to be upgraded while preserving its state and address.
+The KAMI721AC contract has been modified to support upgrades through the transparent proxy pattern. This allows the contract's logic to be upgraded while preserving its state and address.
 
 The upgrade implementation uses:
 
@@ -16,7 +16,7 @@ The upgrade implementation uses:
 
 The upgradeable system consists of three main components:
 
-1. **KAMI721CUpgradeable.sol**: The implementation contract that contains the logic.
+1. **KAMI721ACUpgradeable.sol**: The implementation contract that contains the logic.
 2. **KAMITransparentUpgradeableProxy.sol**: The proxy contract that users interact with.
 3. **KAMIProxyAdmin.sol**: The admin contract that controls upgrades to the proxy.
 
@@ -47,7 +47,7 @@ npx hardhat run scripts/interact.ts --network [your-network]
 
 To upgrade the contract:
 
-1. Create a new implementation of `KAMI721CUpgradeable.sol` with your changes
+1. Create a new implementation of `KAMI721ACUpgradeable.sol` with your changes
 2. Deploy the new implementation
 3. Update the proxy to point to the new implementation
 
@@ -74,7 +74,7 @@ When upgrading the contract:
 
 ## Contract Differences
 
-The main differences between the original KAMI721C and the upgradeable version:
+The main differences between the original KAMI721AC and the upgradeable version:
 
 1. Inheritance from upgradeable versions of OpenZeppelin contracts
 2. Constructor replaced with an `initialize` function

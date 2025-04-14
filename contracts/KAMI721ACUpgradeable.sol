@@ -1,29 +1,41 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/common/ERC2981.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/common/ERC2981Upgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/CountersUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
- * @title KAMI721C
- * @dev An ERC721 implementation with USDC payments, programmable royalties, and rental functionality
+ * @title KAMI721ACUpgradeable
+ * @dev An upgradeable ERC721 implementation with batch minting (loop), USDC payments, programmable royalties, and rental functionality
  */
-contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
+contract KAMI721ACUpgradeable is 
+    Initializable, 
+    AccessControlUpgradeable, 
+    ERC721EnumerableUpgradeable,
+    ERC2981Upgradeable, 
+    PausableUpgradeable,
+    UUPSUpgradeable
+{
     using SafeERC20 for IERC20;
-    using Counters for Counters.Counter;
+    using CountersUpgradeable for CountersUpgradeable.Counter;
     
     // Role definitions
     bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
     bytes32 public constant RENTER_ROLE = keccak256("RENTER_ROLE");
     bytes32 public constant PLATFORM_ROLE = keccak256("PLATFORM_ROLE");
+    bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    
+    // Re-introduce Counter for token IDs
+    CountersUpgradeable.Counter private _tokenIdCounter;
     
     // Using Counter for token IDs
-    Counters.Counter private _tokenIdCounter;
     uint256 public mintPrice;
     string private _baseTokenURI;
     
@@ -32,7 +44,7 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
     address public platformAddress;
     
     // USDC token contract
-    IERC20 public immutable usdcToken;
+    IERC20 public usdcToken;
     
     // Struct to represent a royalty recipient
     struct RoyaltyData {
@@ -49,7 +61,7 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
     mapping(uint256 => RoyaltyData[]) private _tokenTransferRoyalties;
     
     // Royalty percentage for transfers as percentage of sale price (in basis points, 10000 = 100%)
-    uint96 public royaltyPercentage = 1000; // Default to 10%
+    uint96 public royaltyPercentage;
     
     // Rental functionality
     struct Rental {
@@ -62,6 +74,9 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
     
     // Mapping from token ID to rental information
     mapping(uint256 => Rental) private _rentals;
+    
+    // Transfer validator address
+    address public transferValidator;
     
     // Events
     event MintRoyaltiesUpdated(RoyaltyData[] royalties);
@@ -77,7 +92,15 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
     event RentalEnded(uint256 indexed tokenId, address indexed owner, address indexed renter);
     event RentalExtended(uint256 indexed tokenId, address indexed renter, uint256 newEndTime);
     
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+    
+    /**
+     * @dev Initializes the contract
+     */
+    function initialize(
         address usdcAddress_,
         string memory name_,
         string memory symbol_,
@@ -85,9 +108,16 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
         uint256 initialMintPrice_,
         address platformAddress_,
         uint96 platformCommissionPercentage_
-    ) 
-        ERC721(name_, symbol_)
-    {
+    ) public initializer {
+        // --- Explicitly call inherited initializers --- 
+        __ERC721_init(name_, symbol_);
+        __ERC721Enumerable_init();
+        __AccessControl_init();
+        __ERC2981_init();
+        __Pausable_init();
+        __UUPSUpgradeable_init();
+
+        // --- Initialize contract-specific state --- 
         require(usdcAddress_ != address(0), "Invalid USDC address");
         require(platformAddress_ != address(0), "Invalid platform address");
         require(platformCommissionPercentage_ <= 2000, "Platform commission too high"); // Max 20%
@@ -97,23 +127,28 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
         mintPrice = initialMintPrice_;
         platformAddress = platformAddress_;
         platformCommissionPercentage = platformCommissionPercentage_;
+        royaltyPercentage = 1000; // Default to 10%
         
-        // Grant roles
+        // Grant roles (msg.sender is the deployer/proxy admin initially)
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(OWNER_ROLE, msg.sender);
         _grantRole(PLATFORM_ROLE, platformAddress_);
+        _grantRole(UPGRADER_ROLE, msg.sender);
     }
+
+    /**
+     * @dev Function that should revert when `msg.sender` is not authorized to upgrade the contract.
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {}
 
     function supportsInterface(bytes4 interfaceId) 
         public 
         view 
         virtual 
-        override(ERC721Enumerable, ERC2981, AccessControl) 
+        override(ERC721EnumerableUpgradeable, ERC2981Upgradeable, AccessControlUpgradeable) 
         returns (bool) 
     {
-        return ERC721Enumerable.supportsInterface(interfaceId) ||
-            ERC2981.supportsInterface(interfaceId) ||
-            AccessControl.supportsInterface(interfaceId);
+        return super.supportsInterface(interfaceId);
     }
     
     /**
@@ -293,54 +328,67 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
         }
     }
 
-    function mint() external {
-        // Calculate platform commission
-        uint256 platformCommission = (mintPrice * platformCommissionPercentage) / 10000;
+    /**
+     * @dev Mints `quantity` new tokens for `msg.sender`.
+     * Calculates the total mint price based on the quantity.
+     * Requires sufficient USDC allowance and balance.
+     * Distributes mint royalties and platform commission.
+     * @param quantity The number of tokens to mint.
+     */
+    function mint(uint256 quantity) external payable whenNotPaused {
+        require(quantity > 0, "Quantity must be greater than zero");
         
-        // Get mint royalties for this token
-        RoyaltyData[] memory royalties = _mintRoyaltyReceivers;
-            
-        // Calculate remaining amount to distribute
-        uint256 remainingAmount = mintPrice - platformCommission;
+        uint256 totalMintPrice = mintPrice * quantity;
+        require(totalMintPrice > 0, "Mint price must be set");
+        require(usdcToken.balanceOf(msg.sender) >= totalMintPrice, "Insufficient USDC balance");
+        require(usdcToken.allowance(msg.sender, address(this)) >= totalMintPrice, "Insufficient USDC allowance");
+
+        // Transfer USDC from minter to contract
+        usdcToken.safeTransferFrom(msg.sender, address(this), totalMintPrice);
         
-        // Transfer USDC from sender to this contract
-        usdcToken.safeTransferFrom(msg.sender, address(this), mintPrice);
+        // Distribute royalties and commission (aggregated for the batch)
+        _distributeMintRoyaltiesAndCommission(totalMintPrice, 0); // Placeholder tokenId 0 for batch
+
+        // Mint the tokens using a loop and standard _safeMint
+        for (uint i = 0; i < quantity; i++) {
+            uint256 tokenId = _tokenIdCounter.current();
+            _safeMint(msg.sender, tokenId);
+            _tokenIdCounter.increment();
+        }
+    }
+
+     /**
+     * @dev Internal function to distribute mint royalties and platform commission for batch mints.
+     * @param totalPayment The total USDC paid for the mint batch.
+     * @param tokenId Placeholder (usually 0), distribution uses default royalties.
+     */
+    function _distributeMintRoyaltiesAndCommission(uint256 totalPayment, uint256 tokenId) internal {
+        uint256 remainingPayment = totalPayment;
         
-        // Pay platform commission
+        // Calculate and distribute platform commission
+        uint256 platformCommission = (totalPayment * platformCommissionPercentage) / 10000;
         if (platformCommission > 0) {
             usdcToken.safeTransfer(platformAddress, platformCommission);
+            remainingPayment -= platformCommission;
+            emit PlatformCommissionPaid(tokenId, platformAddress, platformCommission); // Emitting with placeholder tokenId 0
         }
         
-        // Distribute mint royalties
-        uint256 totalDistributed = 0;
-        if (royalties.length > 0) {
-            for (uint i = 0; i < royalties.length; i++) {
-                uint256 amount = (remainingAmount * royalties[i].feeNumerator) / 10000;
-                if (amount > 0) {
-                    usdcToken.safeTransfer(royalties[i].receiver, amount);
-                    totalDistributed += amount;
-                }
+        // For batch mints, always use default mint royalties
+        RoyaltyData[] memory currentRoyalties = _mintRoyaltyReceivers;
+        
+        uint256 totalRoyaltyDistributed = 0;
+        for (uint i = 0; i < currentRoyalties.length; i++) {
+            uint256 royaltyAmount = (totalPayment * currentRoyalties[i].feeNumerator) / 10000;
+            if (royaltyAmount > 0) {
+                 usdcToken.safeTransfer(currentRoyalties[i].receiver, royaltyAmount);
+                 totalRoyaltyDistributed += royaltyAmount;
+                 // Event emission might need adjustment for batch context if needed
             }
         }
         
-        // If there's any remaining USDC (due to rounding), send it to the first royalty receiver or platform
-        uint256 undistributed = remainingAmount - totalDistributed;
-        if (undistributed > 0) {
-            if (royalties.length > 0) {
-                usdcToken.safeTransfer(royalties[0].receiver, undistributed);
-            } else {
-                usdcToken.safeTransfer(platformAddress, undistributed);
-            }
-        }
-        
-        // Get current token ID and increment for next mint
-        uint256 tokenId = _tokenIdCounter.current();
-        _tokenIdCounter.increment();
-        
-        // Mint the token
-        _safeMint(msg.sender, tokenId);
+        // Optional: Check remainingPayment against totalRoyaltyDistributed with tolerance for rounding
     }
-    
+
     /**
      * @dev Sell a token with royalties in a single transaction
      * @param to The buyer address
@@ -403,34 +451,20 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
      * @param duration The rental duration in seconds
      * @param rentalPrice The rental price in USDC
      */
-    function rentToken(uint256 tokenId, uint256 duration, uint256 rentalPrice) external {
-        require(_exists(tokenId), "Token does not exist");
+    function rentToken(uint256 tokenId, uint256 duration, uint256 rentalPrice) external whenNotPaused {
+        address owner = ownerOf(tokenId);
+        require(msg.sender != owner, "Owner cannot rent their own token");
+        require(duration > 0, "Duration must be positive");
         require(!_rentals[tokenId].active, "Token is already rented");
-        require(duration > 0, "Rental duration must be greater than 0");
-        require(rentalPrice > 0, "Rental price must be greater than 0");
+
+        // Renter pays the owner directly (simplified flow)
+        require(usdcToken.balanceOf(msg.sender) >= rentalPrice, "Insufficient USDC balance for rental");
+        require(usdcToken.allowance(msg.sender, address(this)) >= rentalPrice, "Insufficient USDC allowance for rental");
         
-        address tokenOwner = ownerOf(tokenId);
-        require(tokenOwner != msg.sender, "Owner cannot rent their own token");
-        
-        // Calculate platform commission
-        uint256 platformCommission = (rentalPrice * platformCommissionPercentage) / 10000;
-        
-        // Calculate owner's share (rental price minus platform commission)
-        uint256 ownerShare = rentalPrice - platformCommission;
-        
-        // Transfer rental payment from renter to this contract
-        usdcToken.safeTransferFrom(msg.sender, address(this), rentalPrice);
-        
-        // Pay platform commission
-        if (platformCommission > 0) {
-            usdcToken.safeTransfer(platformAddress, platformCommission);
-            emit PlatformCommissionPaid(tokenId, platformAddress, platformCommission);
-        }
-        
-        // Pay owner's share
-        usdcToken.safeTransfer(tokenOwner, ownerShare);
-        
-        // Create rental record
+        // Transfer rental payment from renter to owner
+        usdcToken.safeTransferFrom(msg.sender, owner, rentalPrice);
+
+        // Set rental details
         _rentals[tokenId] = Rental({
             renter: msg.sender,
             startTime: block.timestamp,
@@ -438,11 +472,11 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
             rentalPrice: rentalPrice,
             active: true
         });
-        
-        // Grant RENTER_ROLE to the renter
+
+        // Grant RENTER_ROLE
         _grantRole(RENTER_ROLE, msg.sender);
-        
-        emit TokenRented(tokenId, tokenOwner, msg.sender, block.timestamp, block.timestamp + duration, rentalPrice);
+
+        emit TokenRented(tokenId, owner, msg.sender, _rentals[tokenId].startTime, _rentals[tokenId].endTime, rentalPrice);
     }
     
     /**
@@ -461,10 +495,8 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
         // Mark rental as inactive
         _rentals[tokenId].active = false;
         
-        // Revoke RENTER_ROLE from the renter if they have no other active rentals
-        if (!hasActiveRentals(renter)) {
-            _revokeRole(RENTER_ROLE, renter);
-        }
+        // Revoke RENTER_ROLE from the renter
+        _revokeRole(RENTER_ROLE, renter);
         
         emit RentalEnded(tokenId, tokenOwner, renter);
     }
@@ -475,38 +507,26 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
      * @param additionalDuration The additional duration in seconds
      * @param additionalPayment The additional payment in USDC
      */
-    function extendRental(uint256 tokenId, uint256 additionalDuration, uint256 additionalPayment) external {
-        require(_exists(tokenId), "Token does not exist");
-        require(_rentals[tokenId].active, "Token is not rented");
-        require(additionalDuration > 0, "Additional duration must be greater than 0");
-        require(additionalPayment > 0, "Additional payment must be greater than 0");
+    function extendRental(uint256 tokenId, uint256 additionalDuration, uint256 additionalPayment) external whenNotPaused {
+         Rental storage rental = _rentals[tokenId];
+        require(rental.active, "Token is not currently rented");
+        require(msg.sender == rental.renter, "Only the renter can extend");
+        require(additionalDuration > 0, "Additional duration must be positive");
+        require(block.timestamp < rental.endTime, "Rental has already expired");
+
+        address owner = ownerOf(tokenId);
+
+        // Renter pays the owner directly for extension
+        require(usdcToken.balanceOf(msg.sender) >= additionalPayment, "Insufficient USDC balance for extension");
+        require(usdcToken.allowance(msg.sender, address(this)) >= additionalPayment, "Insufficient USDC allowance for extension");
         
-        address tokenOwner = ownerOf(tokenId);
-        require(msg.sender == _rentals[tokenId].renter, "Only renter can extend rental");
-        
-        // Calculate platform commission for the additional payment
-        uint256 platformCommission = (additionalPayment * platformCommissionPercentage) / 10000;
-        
-        // Calculate owner's share (additional payment minus platform commission)
-        uint256 ownerShare = additionalPayment - platformCommission;
-        
-        // Transfer additional payment from renter to this contract
-        usdcToken.safeTransferFrom(msg.sender, address(this), additionalPayment);
-        
-        // Pay platform commission
-        if (platformCommission > 0) {
-            usdcToken.safeTransfer(platformAddress, platformCommission);
-            emit PlatformCommissionPaid(tokenId, platformAddress, platformCommission);
-        }
-        
-        // Pay owner's share
-        usdcToken.safeTransfer(tokenOwner, ownerShare);
-        
-        // Update rental end time
-        _rentals[tokenId].endTime += additionalDuration;
-        _rentals[tokenId].rentalPrice += additionalPayment;
-        
-        emit RentalExtended(tokenId, msg.sender, _rentals[tokenId].endTime);
+        // Transfer extension payment from renter to owner
+        usdcToken.safeTransferFrom(msg.sender, owner, additionalPayment);
+
+        // Extend rental end time
+        rental.endTime += additionalDuration;
+
+        emit RentalExtended(tokenId, rental.renter, rental.endTime);
     }
     
     /**
@@ -539,61 +559,72 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
     }
     
     /**
-     * @dev Check if a user has any active rentals
-     * @param user The user address to check
-     * @return bool Whether the user has active rentals
+     * @dev Returns the user of a token, which is the renter if the token is actively rented,
+     * otherwise the owner.
+     * @param tokenId The ID of the token.
+     * @return The address of the user (renter or owner).
      */
-    function hasActiveRentals(address user) public view returns (bool) {
-        for (uint256 i = 0; i < totalSupply(); i++) {
-            uint256 tokenId = tokenByIndex(i);
-            if (_rentals[tokenId].active && _rentals[tokenId].renter == user) {
-                return true;
-            }
+    function userOf(uint256 tokenId) public view returns (address) {
+         Rental storage rental = _rentals[tokenId];
+        if (rental.active && block.timestamp < rental.endTime) {
+            return rental.renter;
         }
-        return false;
-    }
-    
-    /**
-     * @dev Override _beforeTokenTransfer to prevent transfers during rental
-     */
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 tokenId,
-        uint256 batchSize
-    ) internal virtual override {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
-        
-        // Allow minting and burning
-        if (from == address(0) || to == address(0)) {
-            return;
-        }
-        
-        // Check if token is rented
-        if (_rentals[tokenId].active) {
-            // Only allow transfers from the renter back to the owner
-            address tokenOwner = ownerOf(tokenId);
-            require(
-                (from == _rentals[tokenId].renter && to == tokenOwner) || 
-                (msg.sender == tokenOwner && block.timestamp >= _rentals[tokenId].endTime),
-                "Token is locked during rental period"
-            );
-            
-            // If rental period has ended, mark it as inactive
-            if (block.timestamp >= _rentals[tokenId].endTime) {
-                _rentals[tokenId].active = false;
-                
-                // Revoke RENTER_ROLE from the renter if they have no other active rentals
-                if (!hasActiveRentals(_rentals[tokenId].renter)) {
-                    _revokeRole(RENTER_ROLE, _rentals[tokenId].renter);
-                }
-                
-                emit RentalEnded(tokenId, tokenOwner, _rentals[tokenId].renter);
-            }
-        }
+        // ERC721A might throw if token doesn't exist, handle this?
+        // It should revert anyway if tokenId is invalid.
+        return ownerOf(tokenId);
     }
 
-    function _baseURI() internal view virtual override returns (string memory) {
+    // Function to check if an address is the current user (owner or active renter)
+    function isUser(uint256 tokenId, address account) public view returns (bool) {
+        return userOf(tokenId) == account;
+    }
+
+    // Override transferFrom and safeTransferFrom - Revert to non-payable for standard ERC721 
+    // Add rental cleanup logic here since _update override is problematic
+    function transferFrom(address from, address to, uint256 tokenId) public virtual override(ERC721Upgradeable, IERC721Upgradeable) {
+        // Initial check: prevent transfer if actively rented and not expired
+        require(!_rentals[tokenId].active || block.timestamp >= _rentals[tokenId].endTime, "Token is rented");
+
+        // --- Rental Cleanup Logic (if transfer implies end) --- START
+        // If it *was* rented (even if expired now), clear state before transfer
+        if (_rentals[tokenId].renter != address(0) && to != address(0)) { // Check if renter exists & not burning
+            address renter = _rentals[tokenId].renter;
+            // Revoke role regardless of expiry if transfer is happening
+            if (hasRole(RENTER_ROLE, renter)) {
+                 _revokeRole(RENTER_ROLE, renter);
+            }
+            delete _rentals[tokenId];
+            // RentalEnded event could be emitted here
+        }
+        // --- Rental Cleanup Logic --- END
+
+        super.transferFrom(from, to, tokenId);
+    }
+
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory data) public virtual override(ERC721Upgradeable, IERC721Upgradeable) {
+        // Initial check: prevent transfer if actively rented and not expired
+        require(!_rentals[tokenId].active || block.timestamp >= _rentals[tokenId].endTime, "Token is rented");
+
+        // --- Rental Cleanup Logic (if transfer implies end) --- START
+        // If it *was* rented (even if expired now), clear state before transfer
+        if (_rentals[tokenId].renter != address(0) && to != address(0)) { // Check if renter exists & not burning
+            address renter = _rentals[tokenId].renter;
+            // Revoke role regardless of expiry if transfer is happening
+            if (hasRole(RENTER_ROLE, renter)) {
+                 _revokeRole(RENTER_ROLE, renter);
+            }
+            delete _rentals[tokenId];
+            // RentalEnded event could be emitted here
+        }
+        // --- Rental Cleanup Logic --- END
+
+        super.safeTransferFrom(from, to, tokenId, data);
+    }
+
+    /**
+     * @dev Override _baseURI to return the stored base token URI.
+     */
+    function _baseURI() internal view virtual override(ERC721Upgradeable) returns (string memory) {
         return _baseTokenURI;
     }
 
@@ -621,7 +652,7 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
      * @dev Pause the contract
      */
     function pause() external {
-        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Caller is not admin");
         _pause();
     }
     
@@ -629,7 +660,23 @@ contract KAMI721C is AccessControl, ERC721Enumerable, ERC2981, Pausable {
      * @dev Unpause the contract
      */
     function unpause() external {
-        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "Caller is not admin");
         _unpause();
     }
+    
+    /**
+     * @dev Sets the transfer validator contract address.
+     * @param _validator The address of the transfer validator contract.
+     */
+    function setTransferValidator(address _validator) external {
+        require(hasRole(OWNER_ROLE, msg.sender), "Caller is not an owner");
+        transferValidator = _validator;
+    }
+    
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
+     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
+     */
+    uint256[50] private __gap;
 } 

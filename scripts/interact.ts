@@ -10,11 +10,16 @@ async function main() {
 	const proxyAddress = 'YOUR_PROXY_ADDRESS'; // Replace with your actual proxy address
 
 	// Load the contract ABI from the compiled artifacts
-	const artifactPath = path.join(__dirname, '../artifacts/contracts/KAMI721CUpgradeable.sol/KAMI721CUpgradeable.json');
-	const contractArtifact = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+	const artifactPath = path.join(__dirname, '../artifacts/contracts/KAMI721ACUpgradeable.sol/KAMI721ACUpgradeable.json');
+	if (!fs.existsSync(artifactPath)) {
+		console.error(`Artifact not found at ${artifactPath}. Make sure contracts are compiled.`);
+		process.exit(1);
+	}
+	const contractJson = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+	const contractAbi = contractJson.abi;
 
 	// Connect to the proxy with the implementation ABI
-	const contract = new ethers.Contract(proxyAddress, contractArtifact.abi, user);
+	const contract = new ethers.Contract(proxyAddress, contractAbi, user);
 
 	// Example: Get current mint price
 	const mintPrice = await contract.mintPrice();

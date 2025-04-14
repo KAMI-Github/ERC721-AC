@@ -7,24 +7,31 @@ const ProxyAdminABI = [
 ];
 
 async function main() {
+	const proxyAddress = process.env.PROXY_CONTRACT_ADDRESS;
+	const proxyAdminAddress = process.env.PROXY_ADMIN_ADDRESS;
 	const [deployer] = await ethers.getSigners();
+
+	if (!proxyAddress) {
+		console.error('Proxy contract address not found in environment variables');
+		process.exit(1);
+	}
+
 	console.log('Upgrading contract with the account:', deployer.address);
 
-	// You need to specify these addresses after the initial deployment
-	const proxyAddress = 'YOUR_PROXY_ADDRESS'; // Replace with your actual proxy address
-	const proxyAdminAddress = 'YOUR_PROXY_ADMIN_ADDRESS'; // Replace with your actual proxy admin address
-
-	// Deploy the new implementation contract
-	const KAMI721CUpgradeableV2 = await ethers.getContractFactory('KAMI721CUpgradeable'); // If you rename your upgraded contract, change this
-	const newImplementation = await KAMI721CUpgradeableV2.deploy();
+	// Replace 'KAMI721ACUpgradeableV2' with the name of your new implementation contract
+	console.log('Deploying new implementation contract...');
+	const KAMI721ACUpgradeableV2 = await ethers.getContractFactory('KAMI721ACUpgradeable'); // Assuming V2 has same name for now
+	const newImplementation = await KAMI721ACUpgradeableV2.deploy();
 	await newImplementation.waitForDeployment();
-	console.log('New implementation deployed to:', await newImplementation.getAddress());
+	const newImplementationAddress = await newImplementation.getAddress();
+	console.log('New implementation deployed to:', newImplementationAddress);
 
-	// Connect to the proxy admin using its ABI
+	// Get the ProxyAdmin contract
+	console.log(`Using ProxyAdmin at: ${proxyAdminAddress}`);
 	const proxyAdmin = new ethers.Contract(proxyAdminAddress, ProxyAdminABI, deployer);
 
 	// Upgrade the proxy to the new implementation
-	const tx = await proxyAdmin.upgrade(proxyAddress, await newImplementation.getAddress());
+	const tx = await proxyAdmin.upgrade(proxyAddress, newImplementationAddress);
 	await tx.wait();
 
 	console.log('Proxy upgraded to new implementation successfully!');
